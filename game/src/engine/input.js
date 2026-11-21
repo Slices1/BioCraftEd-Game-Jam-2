@@ -324,7 +324,7 @@ export function createInput(canvas, view, opts = {}) {
     const R = vbuttons[0].size / s;
     vbuttons.forEach((b, i) => {
       b.r = b.size / s;
-      const off = b.offset || DEFAULT_OFFSETS[i] || [-2.5 * i, 0];
+      const off = i === 0 ? [0, 0] : [-1.3 * i, -2.3 * i]; // stack up-left of A, away from joystick
       b.x = view.w - sf.right - m - R + off[0] * R;
       b.y = view.h - sf.bottom - m - R + off[1] * R;
     });
