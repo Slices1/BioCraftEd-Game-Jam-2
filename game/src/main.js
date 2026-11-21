@@ -16,8 +16,8 @@ import { playScene } from './scenes/play.js';
 import { gameoverScene } from './scenes/gameover.js';
 
 export const CONFIG = {
-  id: 'jamkit',                 // localStorage namespace: change per game
-  title: 'JAM KIT',
+  id: 'corvid',                 // localStorage namespace: change per game
+  title: 'CORVID',
   design: { width: 720, height: 1280, mode: 'expand', autoRotate: true }, // landscape screens get 1280x720
   background: '#16161d',
   firstScene: 'title',
@@ -39,6 +39,11 @@ function setupAudio(audio) {
 
 function bindDefaults(input) {
   input.bind('action', { keys: ['Space', 'KeyJ', 'KeyZ', 'KeyX'], touch: 'buttonA', mouse: 0, pad: [0, 2] });
+  // CORVID gameplay actions
+  input.bind('act', { keys: ['KeyE', 'Enter', 'NumpadEnter', 'KeyJ'], touch: 'buttonA', mouse: 0, pad: [0] });
+  input.bind('swap', { keys: ['KeyQ', 'ShiftLeft', 'ShiftRight', 'KeyK'], touch: 'buttonB', pad: [1] });
+  input.bind('reset', { keys: ['KeyR'], touch: 'buttonR', pad: [3] });
+  input.bind('debugNext', { keys: ['BracketRight'] });
   input.bind('confirm', { keys: ['Enter', 'NumpadEnter', 'Space'], pad: [0] });
   input.bind('back', { keys: ['Backspace'], pad: [1] });
   input.bind('pause', { keys: ['Escape', 'KeyP'], pad: [9] });

@@ -1,0 +1,187 @@
+// World: one tile grid holding every room, the entity list, control state (who the crow is driving),
+// context actions, laser deaths, room tracking + snapshot/reset.
+import { ROOMS } from './rooms.js';
+import { settle } from './physics.js';
+import { Crow } from './entities/crow.js';
+import { Suit } from './entities/suit.js';
+import { Plate } from './entities/plate.js';
+import { Door } from './entities/door.js';
+import { CogGate } from './entities/cogGate.js';
+import { Stick } from './entities/stick.js';
+import { Press } from './entities/press.js';
+import { CrackedWall } from './entities/crackedWall.js';
+import { ScrapPile } from './entities/scrapPile.js';
+import { Crate } from './entities/crate.js';
+import { MagnetCrane } from './entities/magnetCrane.js';
+import { Emitter, Receiver } from './entities/laser.js';
+import { Lift } from './entities/lift.js';
+import { Vent } from './entities/vent.js';
+import { Shiny } from './entities/shiny.js';
+
+const TYPES = { crow: Crow, suit: Suit, plate: Plate, door: Door, cog: CogGate, stick: Stick, press: Press, cracked: CrackedWall,
+  scrap: ScrapPile, crate: Crate, crane: MagnetCrane, emitter: Emitter, receiver: Receiver, lift: Lift, vent: Vent, shiny: Shiny };
+const K = (x, y) => x * 65536 + y + 32768;
+
+export function createWorld(game) {
+  const { audio, fx } = game;
+  const w = {
+    rooms: [], base: new Map(), ov: new Map(), entities: [], byId: new Map(), bodies: [], emitters: [],
+    ctrl: { active: 'crow', jack: null }, time: 0, won: false, roomIdx: 0, snap: null, deaths: 0, onEnterRoom: null,
+  };
+
+  function add(def) {
+    const C = TYPES[def.type];
+    if (!C) { console.warn('[world] unknown entity', def.type); return null; }
+    const e = new C(def);
+    w.entities.push(e); w.byId.set(e.id, e);
+    if ('hw' in e) w.bodies.push(e);
+    if (e.type === 'emitter') w.emitters.push(e);
+    return e;
+  }
+
+  ROOMS.forEach((r, i) => {
+    const room = { ...r, idx: i, w: r.map[0].length, h: r.map.length };
+    w.rooms.push(room);
+    r.map.forEach((row, ty) => [...row].forEach((ch, tx) => {
+      const h = ch === '#' || ch === 'v' ? 2 : ch === '-' ? 1 : ch === 'o' ? -1 : 0;
+      w.base.set(K(r.ox + tx, r.oy + ty), { h, vent: ch === 'v', room: i });
+    }));
+    for (const d of r.ents) {
+      const def = { ...d, room: i, x: r.ox + d.at[0], y: r.oy + d.at[1] };
+      if (d.console) def.console = [r.ox + d.console[0], r.oy + d.console[1]];
+      if (d.zone) def.zone = d.zone.map(([a, b]) => [r.ox + a, r.oy + b]);
+      if (d.x0 != null) { def.x0 = r.ox + d.x0; def.x1 = r.ox + d.x1; }
+      add(def);
+    }
+  });
+  const r0 = w.rooms[0];
+  const crow = add({ type: 'crow', id: 'crow', room: 0, x: r0.ox + r0.spawn[0] - 0.5, y: r0.oy + r0.spawn[1] - 0.5 });
+  // draw order: entities that should always draw above others in their tile
+  w.get = (id) => w.byId.get(id);
+  w.crow = crow;
+
+  // ---- grid ---------------------------------------------------------------------------
+  w.baseHeight = (tx, ty) => { const t = w.base.get(K(tx, ty)); return t ? t.h : 3; };
+  w.heightAt = (tx, ty) => { const k = K(tx, ty); const o = w.ov.get(k); return o != null ? o : w.baseHeight(tx, ty); };
+  w.isVent = (tx, ty) => { const t = w.base.get(K(tx, ty)); return !!(t && t.vent); };
+  w.tileRoom = (tx, ty) => { const t = w.base.get(K(tx, ty)); return t ? t.room : -1; };
+  function rebuildOverrides() {
+    w.ov.clear();
+    for (const e of w.entities) { const ts = e.tiles(); if (ts) for (const [x, y, h] of ts) w.ov.set(K(x, y), h); }
+  }
+  w.powered = (inputs) => !inputs || inputs.length === 0 || inputs.some((id) => { const e = w.get(id); return e && e.on; });
+  w.anyOnTile = (tx, ty, includeCrow, except) => w.bodies.some((b) => b !== except && !b.held && !b.hidden && (includeCrow || !b.flying) && b.onTile(tx, ty));
+
+  // ---- juice / audio ------------------------------------------------------------------
+  w.sfx = (name, o) => { try { audio.play(name, o); } catch (e) { /* missing sound */ } };
+  w.juice = (kind, x, y, amt = 0.3) => {
+    const s = isoPt(x, y, 0.2);
+    if (kind === 'slam') { fx.shake.add(0.6); fx.hitstop(0.09); fx.burst('dust', s.x, s.y, { count: 30, color: ['#8a8f99', '#ffb63b'] }); fx.burst('sparks', s.x, s.y, { count: 18 }); }
+    else if (kind === 'jack') { fx.shake.add(0.18); fx.hitstop(0.05); fx.burst('sparks', s.x, s.y - 40, { count: 14, color: ['#4ff3ff', '#ffffff'] }); }
+    else if (kind === 'land') { fx.shake.add(amt); fx.burst('dust', s.x, s.y, { count: 14 }); }
+    else if (kind === 'death') { fx.shake.add(0.7); fx.hitstop(0.12); fx.flash('#ff3b5c', 0.3, 0.45); fx.burst('sparks', s.x, s.y - 38, { count: 40, color: ['#ff3b4f', '#ffffff', '#ffb63b'] }); fx.burst('dust', s.x, s.y - 38, { count: 12, color: '#000' }); }
+  };
+  function isoPt(x, y, z) { return { x: (x - y) * 32, y: (x + y) * 16 - z * 32 }; }
+
+  // ---- control ------------------------------------------------------------------------
+  w.activeBody = () => w.get(w.ctrl.active);
+  w.suitNear = (b, r = 1.1) => {
+    let best = null, bd = r;
+    for (const s of w.bodies) if (s.type === 'suit' && !s.held && !s.hidden) { const d = Math.hypot(s.x - b.x, s.y - b.y); if (d < bd) { bd = d; best = s; } }
+    return best;
+  };
+  w.machineNear = (s) => w.entities.find((e) => e.console && Math.hypot(e.console.x + 0.5 - s.x, e.console.y + 0.5 - s.y) < 1.25) || null;
+  w.stickNear = (c) => w.entities.find((e) => e.type === 'stick' && !e.carried && !e.used && Math.hypot(e.x - c.x, e.y - c.y) < 0.75) || null;
+  w.cogNear = (c) => w.entities.find((e) => e.type === 'cog' && !e.jammed && Math.hypot(e.slot.x - c.x, e.slot.y - c.y) < 0.95) || null;
+
+  function enterSuit(s) {
+    crow.inside = s.id; crow.hidden = true; w.ctrl.active = s.id;
+    if (crow.carry) { const st = w.get(crow.carry); st.rest(s.x, s.y); crow.carry = null; }
+    s.carried = true;
+    w.sfx('jack_in'); w.juice('jack', s.x, s.y);
+  }
+  function exitSuit(s) {
+    crow.inside = null; crow.hidden = false; crow.x = s.x; crow.y = s.y; crow.vx = 0; crow.vy = 0;
+    w.ctrl.active = 'crow'; w.sfx('jack_out');
+  }
+  w.prompt = () => {
+    const c = w.ctrl;
+    if (c.jack) { const m = w.get(c.jack); const l = m.label(w); return l ? `${l} · B unjack` : 'B unjack'; }
+    const a = w.activeBody();
+    if (a.type === 'suit') return w.machineNear(a) ? 'Jack in' : 'B: exit suit';
+    if (crow.carry && w.cogNear(crow)) return 'Jam stick';
+    if (!crow.carry && w.stickNear(crow)) return 'Pick up stick';
+    if (w.suitNear(crow)) return 'B: enter suit';
+    if (crow.carry) return 'Drop stick';
+    return '';
+  };
+
+  w.update = (dt, it) => {
+    w.time += dt;
+    rebuildOverrides();
+    const c = w.ctrl;
+    if (c.jack) {
+      const m = w.get(c.jack);
+      m.control(dt, it, w);
+      if (it.swap) { c.jack = null; m.pilot = null; w.sfx('jack_out'); }
+      else if (it.act) m.act(w);
+    } else if (c.active !== 'crow') {
+      const s = w.get(c.active);
+      s.walk(dt, it.mx, it.my, w);
+      if (it.act) { const m = w.machineNear(s); if (m) { c.jack = m.id; m.pilot = s.id; w.sfx('jack_in'); w.juice('jack', s.x, s.y); } }
+      else if (it.swap) exitSuit(s);
+    } else if (!crow.dead) {
+      crow.fly(dt, it.mx, it.my, w);
+      if (it.act) {
+        const cog = crow.carry && w.cogNear(crow), st = !crow.carry && w.stickNear(crow);
+        if (cog) { const s = w.get(crow.carry); s.used = true; s.carried = false; crow.carry = null; cog.jammed = true; w.sfx('cog_jam'); w.juice('land', cog.slot.x, cog.slot.y, 0.35); }
+        else if (st) { st.carried = true; crow.carry = st.id; w.sfx('stick_pick'); }
+        else if (crow.carry) { const s = w.get(crow.carry); s.rest(crow.x, crow.y); crow.carry = null; w.sfx('ui_click'); }
+      } else if (it.swap) { const s = w.suitNear(crow); if (s) enterSuit(s); }
+    }
+    for (const e of w.entities) e.update(dt, w);
+    rebuildOverrides();
+    for (const b of w.bodies) if (!b.flying && !b.held && !b.hidden) settle(w, b);
+    if (crow.carry) { const s = w.get(crow.carry); s.x = crow.x; s.y = crow.y; }
+    crow.groundZ = Math.max(0, Math.min(1, w.heightAt(Math.floor(crow.x), Math.floor(crow.y))));
+    // laser deaths
+    if (crow.dead > 0) { crow.dead -= dt; if (crow.dead <= 0) respawnCrow(); }
+    else if (!crow.inside && w.emitters.some((e) => e.hits(crow.x, crow.y, crow.hw))) killCrow();
+    // shiny
+    const sh = w.get('SHINY');
+    if (sh && !w.won && !crow.inside && Math.hypot(sh.x + 0.5 - crow.x, sh.y + 0.5 - crow.y) < 0.7) { w.won = true; w.sfx('stick_pick'); fx.flash('#fff4b0', 0.6, 0.8); }
+    // room tracking
+    const a = c.jack ? w.get(w.get(c.jack).pilot) || w.activeBody() : w.activeBody();
+    const ri = w.tileRoom(Math.floor(a.x), Math.floor(a.y));
+    if (ri >= 0 && ri !== w.roomIdx) { w.roomIdx = ri; w.snapshot(); if (w.onEnterRoom) w.onEnterRoom(w.rooms[ri]); }
+  };
+
+  function killCrow() {
+    w.juice('death', crow.x, crow.y); w.sfx('zap_death'); w.deaths++;
+    if (crow.carry) { w.get(crow.carry).returnToRest(); crow.carry = null; }
+    crow.dead = 0.9; crow.hidden = true;
+  }
+  function respawnCrow() {
+    const r = w.rooms[w.roomIdx];
+    crow.dead = 0; crow.hidden = false; crow.x = r.ox + r.spawn[0]; crow.y = r.oy + r.spawn[1]; crow.vx = crow.vy = 0;
+  }
+
+  // ---- snapshot / reset / debug -------------------------------------------------------
+  w.snapshot = () => { w.snap = { ents: w.entities.map((e) => e.save()), ctrl: { ...w.ctrl } }; };
+  w.reset = () => {
+    if (!w.snap) return;
+    w.entities.forEach((e, i) => e.load(w.snap.ents[i]));
+    w.ctrl = { ...w.snap.ctrl };
+    rebuildOverrides();
+  };
+  w.teleportNext = () => {
+    const ri = Math.min(w.rooms.length - 1, w.roomIdx + 1), r = w.rooms[ri];
+    if (w.ctrl.active !== 'crow') exitSuit(w.get(w.ctrl.active));
+    w.ctrl.jack = null;
+    crow.x = r.ox + r.spawn[0]; crow.y = r.oy + r.spawn[1]; crow.dead = 0; crow.hidden = false;
+  };
+
+  rebuildOverrides();
+  w.snapshot();
+  return w;
+}

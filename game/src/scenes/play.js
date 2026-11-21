@@ -1,189 +1,134 @@
-// DEMO play scene (replace me). Shows: stick() movement (keys / gamepad / virtual joystick),
-// an action with edge detection (dash), camera follow + bounds, particles, popups, shake,
-// hitstop, flash, tweens, sounds that may not exist yet, pause support, scene change.
-
-import { TAU, rand, dist, norm, damp, circleCircle } from '../engine/util.js';
+// CORVID play scene: isometric factory rooms, crow + suits. Debug: ']' = next room, R = reset room.
+import { createWorld } from '../game/world.js';
+import { P, box, tileTop, poly, METAL, DARK } from '../game/iso.js';
 import { text } from '../engine/ui.js';
 
-const WORLD_W = 1800, WORLD_H = 1800;
+let env = null, bloomMod = null;
+import('../game/env.js').then((m) => { env = m; }).catch(() => {});
+import('../game/bloom.js').then((m) => { bloomMod = m; }).catch(() => {});
 
 export function playScene(game) {
   const { view, input, audio, fx, scenes } = game;
   const cam = fx.camera;
   const stick = { x: 0, y: 0, len: 0 };
-  const tmp = { x: 0, y: 0 };
-  let player, pickups, enemies, score, time, level, over, overTimer;
+  const camT = { x: 0, y: 0 };
+  let w, t = 0, bloom = null, envOk = true, bloomOk = true, banner = 0, bannerText = '', hum = null, winT = 0;
 
-  function spawnPickup() {
-    const k = { x: rand(90, WORLD_W - 90), y: rand(90, WORLD_H - 90), r: 24, s: 0, phase: rand(0, TAU) };
-    fx.tween(k, { s: 1 }, 0.45, { ease: 'backOut' });
-    return k;
+  function safe(fn) { try { fn(); return true; } catch (e) { console.warn('[play] env/bloom error', e); return false; } }
+
+  function updateCamTarget(snap) {
+    const c = w.ctrl, a = c.jack ? (w.get(w.get(c.jack).pilot) || w.activeBody()) : w.activeBody();
+    const [sx, sy] = P(a.x, a.y, a.z || 0);
+    camT.x = sx; camT.y = sy - 30;
+    cam.zoom = Math.min(view.w, view.h) / 720;
+    if (snap) cam.snap();
   }
-  function spawnEnemy() {
-    let x, y, tries = 0;
-    do { x = rand(80, WORLD_W - 80); y = rand(80, WORLD_H - 80); }
-    while (dist(x, y, player.x, player.y) < 650 && ++tries < 40);
-    const e = { x, y, r: 30, vx: 0, vy: 0, speed: 160 + level * 22, s: 0, wob: rand(0, TAU) };
-    fx.tween(e, { s: 1 }, 0.6, { ease: 'elasticOut' });
-    fx.burst('dust', x, y, { count: 14, color: ['#ff5d73', '#a8a2b8'] });
-    return e;
+
+  // ---- drawing helpers (fallback when env.js isn't there) -------------------------------
+  function floor(sx, sy, kind, tx, ty) {
+    if (env && envOk && env.drawFloor) { envOk = safe(() => env.drawFloor(ctxRef, sx, sy, kind, t, tx * 31 + ty * 17)); if (envOk) return; }
+    tileTop(ctxRef, tx, ty, kind === 'pit' ? -1 : 0, kind === 'pit' ? '#030405' : ((tx + ty) % 2 ? '#1b1f26' : '#1e232b'), 'rgba(79,243,255,0.06)');
   }
-  function die() {
-    over = true; overTimer = 1.1; player.dead = true;
-    fx.hitstop(0.12);
-    fx.shake.add(0.9);
-    fx.flash('#ff3b5c', 0.35, 0.5);
-    fx.burst('sparks', player.x, player.y, { count: 46, speed: [300, 950], color: ['#ffffff', '#7df9ff', '#ff5d73'] });
-    audio.play('hit');
-    audio.play('lose', { delay: 0.2 });
-    audio.duck(0.7, 1400);
+  function wallBlock(sx, sy, h, face, tx, ty) {
+    if (env && envOk && env.drawRaised) { envOk = safe(() => env.drawRaised(ctxRef, sx, sy, h, t, tx * 13 + ty * 7)); if (envOk) return; }
+    box(ctxRef, tx, ty, 0, 1, 1, h, h >= 1.5 ? DARK : METAL);
+  }
+  let ctxRef = null;
+
+  function render(ctx) {
+    ctxRef = ctx;
+    ctx.fillStyle = '#07080b'; ctx.fillRect(0, 0, view.w, view.h);
+    if (env && envOk && env.drawBackdrop) envOk = safe(() => env.drawBackdrop(ctx, view, t));
+    cam.begin(ctx);
+    const cur = w.rooms[w.roomIdx];
+    const vis = cam.visible;
+    const items = [];
+    for (const r of w.rooms) {
+      for (let ty = r.oy; ty < r.oy + r.h; ty++) for (let tx = r.ox; tx < r.ox + r.w; tx++) {
+        const [sx, sy] = P(tx, ty, 0);
+        if (sx < vis.x - 80 || sx > vis.x + vis.w + 80 || sy < vis.y - 120 || sy > vis.y + vis.h + 60) continue;
+        const bh = w.baseHeight(tx, ty);
+        if (bh <= 0) floor(sx, sy, bh < 0 ? 'pit' : 'floor', tx, ty);
+        else if (w.isVent(tx, ty)) floor(sx, sy, 'grate', tx, ty);
+        else {
+          let h = bh, face = 'stub';
+          if (bh >= 2) {
+            const back = r === cur && (ty === r.oy || tx === r.ox);
+            h = back ? 2 : 0.45; face = back ? (ty === r.oy ? 'n' : 'w') : 'stub';
+          }
+          items.push({ d: tx + ty + 1, z: 0, f: () => wallBlock(sx, sy, h, face, tx, ty) });
+        }
+      }
+    }
+    for (const e of w.entities) items.push({ d: e.depth, z: e.z || 0, f: () => e.draw(ctx, t, w) });
+    items.sort((a, b) => a.d - b.d || a.z - b.z);
+    for (const it of items) it.f();
+    for (const e of w.emitters) e.drawBeam(ctx, t);
+    fx.drawWorld(ctx);
+    drawPrompt(ctx);
+    cam.end(ctx);
+    if (bloomMod && bloomOk) { if (!bloom) bloomOk = safe(() => { bloom = bloomMod.createBloom(); }); if (bloom) bloomOk = safe(() => bloom.apply(ctx, game.canvas)); }
+    hud(ctx, cur);
+  }
+
+  function drawPrompt(ctx) {
+    const p = w.prompt();
+    if (!p || w.crow.dead > 0) return;
+    const c = w.ctrl, a = c.jack ? (w.get(w.get(c.jack).pilot) || w.activeBody()) : w.activeBody();
+    const [sx, sy] = P(a.x, a.y, (a.z || 0) + (a.type === 'suit' ? 2.1 : 1.0));
+    ctx.save(); ctx.font = '600 16px system-ui, sans-serif';
+    const tw = ctx.measureText(p).width + 18;
+    ctx.fillStyle = 'rgba(8,12,16,0.85)'; ctx.strokeStyle = 'rgba(79,243,255,0.7)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(sx - tw / 2, sy - 30, tw, 24, 6) : ctx.rect(sx - tw / 2, sy - 30, tw, 24); ctx.fill(); ctx.stroke();
+    poly(ctx, [[sx - 5, sy - 6], [sx + 5, sy - 6], [sx, sy]], 'rgba(79,243,255,0.7)');
+    ctx.fillStyle = '#dffcff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(p, sx, sy - 18); ctx.restore();
+  }
+
+  function hud(ctx, cur) {
+    const top = view.safe.top + 16, left = view.safe.left + 16;
+    text(ctx, `${cur.idx + 1} · ${cur.name}`, left, top + 14, { size: 22, align: 'left', color: '#9fdfe6', outline: 4 });
+    if (banner > 0) {
+      text(ctx, cur.name, view.w / 2, view.h * 0.2, { size: 46, outline: 6, color: '#e9fbff', alpha: Math.min(1, banner) });
+      text(ctx, cur.hint || '', view.w / 2, view.h * 0.2 + 44, { size: 24, outline: 4, color: '#ffb63b', alpha: Math.min(1, banner), maxWidth: view.w - 40 });
+    }
+    if (t < 6 && w.roomIdx === 0) {
+      const h = view.isTouch ? 'Stick: move · A: act · B: enter/exit suit · ↺ reset' : 'WASD move · E act · Q/Shift suit · R reset';
+      text(ctx, h, view.w / 2, view.h - view.safe.bottom - (view.isTouch ? (view.isPortrait ? 260 : 150) : 40), { size: 22, outline: 4, alpha: Math.min(1, 6 - t), maxWidth: view.w - 40 });
+    }
+    if (w.won) {
+      ctx.fillStyle = `rgba(0,0,0,${Math.min(0.7, winT * 0.4)})`; ctx.fillRect(0, 0, view.w, view.h);
+      text(ctx, 'THE GREAT SHINY IS YOURS', view.w / 2, view.h / 2, { size: 44, outline: 6, color: '#fff4b0', maxWidth: view.w - 40 });
+    }
   }
 
   return {
     pausable: true,
-    touch: { joystick: true, buttons: [{ id: 'buttonA', label: 'DASH' }] },
-
+    touch: { joystick: true, buttons: [{ id: 'buttonA', label: 'A' }, { id: 'buttonB', label: 'B' }, { id: 'buttonR', label: '↺', size: 28 }] },
     enter() {
-      score = 0; time = 0; level = 0; over = false; overTimer = 0;
-      player = { x: WORLD_W / 2, y: WORLD_H / 2, vx: 0, vy: 0, r: 26, dash: 0, cooldown: 0, fx: 1, fy: 0, squash: 1, grace: 1, dead: false };
-      pickups = Array.from({ length: 7 }, spawnPickup);
-      enemies = [spawnEnemy()];
-      cam.setBounds(0, 0, WORLD_W, WORLD_H).follow(player, 7).snap();
-      audio.music('music', { fade: 1.5 });
+      w = createWorld(game);
+      t = 0; banner = 3; winT = 0;
+      w.onEnterRoom = () => { banner = 3; audio.play('ui_click'); };
+      cam.reset(); cam.follow(camT, 6);
+      updateCamTarget(true);
+      game.state.world = w;
     },
-
+    exit() { if (hum) { hum.stop(0.2); hum = null; } },
     update(dt) {
-      time += dt;
-      if (over) {
-        overTimer -= dt;
-        if (overTimer <= 0 && !scenes.transitioning) scenes.go('gameover', { score }, { fade: 0.5 });
-        return;
-      }
-      const p = player;
+      t += dt; banner = Math.max(0, banner - dt);
       input.stick(stick);
-      if (stick.len > 0.1) { p.fx = stick.x / stick.len; p.fy = stick.y / stick.len; }
-      p.cooldown = Math.max(0, p.cooldown - dt);
-      p.grace = Math.max(0, p.grace - dt);
-
-      if (input.pressed('action') && p.cooldown <= 0) {
-        if (input.lastDevice === 'mouse' && stick.len < 0.1) { // click: dash toward the cursor
-          cam.screenToWorld(input.mouse.x, input.mouse.y, tmp);
-          norm(tmp.x - p.x, tmp.y - p.y, tmp);
-          if (tmp.x || tmp.y) { p.fx = tmp.x; p.fy = tmp.y; }
-        }
-        p.vx = p.fx * 1300; p.vy = p.fy * 1300;
-        p.dash = 0.16; p.cooldown = 0.45; p.squash = 1.4;
-        fx.burst('dust', p.x, p.y, { count: 10 });
-        fx.shake.add(0.12);
-        audio.play('dash', { pitchVar: 0.08 });
-      }
-      if (p.dash > 0) {
-        p.dash -= dt;
-        fx.particles.emit(p.x, p.y, { count: 1, speed: [5, 30], life: [0.18, 0.3], size: [26, 34], color: '#7df9ff', alpha: 0.35 });
-      } else {
-        p.vx = damp(p.vx, stick.x * 440, 14, dt);
-        p.vy = damp(p.vy, stick.y * 440, 14, dt);
-      }
-      p.x += p.vx * dt; p.y += p.vy * dt;
-      if (p.x < p.r) { p.x = p.r; p.vx = Math.abs(p.vx) * 0.4; }
-      if (p.x > WORLD_W - p.r) { p.x = WORLD_W - p.r; p.vx = -Math.abs(p.vx) * 0.4; }
-      if (p.y < p.r) { p.y = p.r; p.vy = Math.abs(p.vy) * 0.4; }
-      if (p.y > WORLD_H - p.r) { p.y = WORLD_H - p.r; p.vy = -Math.abs(p.vy) * 0.4; }
-      p.squash = damp(p.squash, 1, 10, dt);
-
-      for (let i = 0; i < pickups.length; i++) {
-        const k = pickups[i];
-        if (k.s > 0.6 && circleCircle(p, k)) {
-          score += 10;
-          fx.burst('sparks', k.x, k.y);
-          fx.popup('+10', k.x, k.y - 30, { color: '#ffd166', size: 44 });
-          fx.shake.add(0.22);
-          audio.play('pickup');
-          pickups[i] = spawnPickup();
-          if (score % 50 === 0) {
-            level++;
-            enemies.push(spawnEnemy());
-            fx.popup('DANGER UP!', p.x, p.y - 70, { color: '#ff5d73', size: 40, life: 1.3 });
-            audio.play('powerup');
-          }
-        }
-      }
-
-      for (const e of enemies) {
-        e.wob += dt * 6;
-        norm(p.x - e.x, p.y - e.y, tmp);
-        e.vx = damp(e.vx, tmp.x * e.speed, 2.5, dt);
-        e.vy = damp(e.vy, tmp.y * e.speed, 2.5, dt);
-        e.x += e.vx * dt; e.y += e.vy * dt;
-      }
-      for (let i = 0; i < enemies.length; i++) { // keep enemies from stacking
-        for (let j = i + 1; j < enemies.length; j++) {
-          const a = enemies[i], b = enemies[j], d = dist(a.x, a.y, b.x, b.y), min = a.r + b.r;
-          if (d > 0 && d < min) {
-            const push = (min - d) / 2 / d, dx = (b.x - a.x) * push, dy = (b.y - a.y) * push;
-            a.x -= dx; a.y -= dy; b.x += dx; b.y += dy;
-          }
-        }
-      }
-      if (p.grace <= 0) for (const e of enemies) if (e.s > 0.8 && circleCircle(p, e)) { die(); break; }
+      // screen direction -> world: screen up = world (-x, -y)
+      let mx = stick.x + stick.y, my = stick.y - stick.x;
+      const l = Math.hypot(mx, my);
+      if (l > 0.001) { mx = mx / l * stick.len; my = my / l * stick.len; }
+      if (input.pressed('reset')) { w.reset(); audio.play('ui_click'); }
+      if (input.pressed('debugNext')) w.teleportNext();
+      w.update(dt, { mx, my, act: input.pressed('act'), swap: input.pressed('swap') });
+      updateCamTarget(false);
+      const wantHum = w.rooms[w.roomIdx].ents.some((e) => e.type === 'emitter');
+      if (wantHum && !hum) { const h = audio.play('laser_hum', { loop: true, volume: 0.4 }); if (h && h.playing !== false) hum = h; }
+      else if (!wantHum && hum) { hum.stop(0.5); hum = null; }
+      if (w.won) { winT += dt; if (winT > 5 && !scenes.transitioning) scenes.go(scenes.has && scenes.has('ending') ? 'ending' : 'title', {}, { fade: 1 }); }
     },
-
-    render(ctx) {
-      ctx.fillStyle = '#0d0d14';
-      ctx.fillRect(0, 0, view.w, view.h);
-      cam.begin(ctx);
-      const v = cam.visible;
-      ctx.fillStyle = '#1c1c2a';
-      ctx.fillRect(0, 0, WORLD_W, WORLD_H);
-      ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 2;
-      ctx.beginPath();
-      const G = 100;
-      for (let x = Math.max(0, Math.floor(v.x / G) * G); x <= Math.min(WORLD_W, v.x + v.w); x += G) { ctx.moveTo(x, 0); ctx.lineTo(x, WORLD_H); }
-      for (let y = Math.max(0, Math.floor(v.y / G) * G); y <= Math.min(WORLD_H, v.y + v.h); y += G) { ctx.moveTo(0, y); ctx.lineTo(WORLD_W, y); }
-      ctx.stroke();
-      ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 6;
-      ctx.strokeRect(0, 0, WORLD_W, WORLD_H);
-
-      for (const k of pickups) {
-        if (!cam.isVisible(k.x, k.y, 40)) continue;
-        const bob = Math.sin(time * 4 + k.phase) * 6, s = Math.max(0.001, k.s);
-        ctx.save(); ctx.translate(k.x, k.y + bob); ctx.scale(s, s);
-        ctx.fillStyle = '#ffd166'; ctx.beginPath(); ctx.arc(0, 0, k.r, 0, TAU); ctx.fill();
-        ctx.fillStyle = '#fff3c4'; ctx.beginPath(); ctx.arc(-7, -7, k.r * 0.35, 0, TAU); ctx.fill();
-        ctx.restore();
-      }
-      for (const e of enemies) {
-        const s = Math.max(0.001, e.s), r = e.r;
-        ctx.save(); ctx.translate(e.x, e.y); ctx.scale(s * (1 + Math.sin(e.wob) * 0.06), s * (1 - Math.sin(e.wob) * 0.06));
-        ctx.fillStyle = '#ff5d73'; ctx.fillRect(-r, -r, r * 2, r * 2);
-        norm(player.x - e.x, player.y - e.y, tmp);
-        ctx.fillStyle = '#fff';
-        ctx.beginPath(); ctx.arc(-10 + tmp.x * 4, -6 + tmp.y * 4, 7, 0, TAU); ctx.arc(10 + tmp.x * 4, -6 + tmp.y * 4, 7, 0, TAU); ctx.fill();
-        ctx.restore();
-      }
-      const p = player;
-      if (!p.dead) {
-        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(Math.atan2(p.fy, p.fx));
-        ctx.scale(p.squash, 1 / p.squash);
-        ctx.globalAlpha = p.grace > 0 && Math.floor(time * 16) % 2 ? 0.5 : 1;
-        ctx.fillStyle = '#7df9ff'; ctx.beginPath(); ctx.arc(0, 0, p.r, 0, TAU); ctx.fill();
-        ctx.fillStyle = '#10313a'; ctx.beginPath(); ctx.arc(p.r * 0.45, 0, 6, 0, TAU); ctx.fill();
-        ctx.restore();
-        if (p.cooldown > 0) {
-          ctx.strokeStyle = 'rgba(125,249,255,0.6)'; ctx.lineWidth = 5;
-          ctx.beginPath(); ctx.arc(p.x, p.y, p.r + 10, -Math.PI / 2, -Math.PI / 2 + TAU * (1 - p.cooldown / 0.45)); ctx.stroke();
-        }
-      }
-      fx.drawWorld(ctx);
-      cam.end(ctx);
-
-      const top = view.safe.top + 14;
-      text(ctx, String(score), view.w / 2, top + 44, { size: 68, outline: 6, color: '#fff' });
-      text(ctx, `BEST ${Math.max(game.best.get(), score)}`, view.w / 2, top + 100, { size: 26, outline: 4, color: '#b8b8cc' });
-      if (time < 4) {
-        const hint = view.isTouch ? 'Drag left side to move · DASH to dash' : 'WASD / Arrows to move · Space / Click to dash';
-        text(ctx, hint, view.w / 2, view.h * 0.62, { size: 30, outline: 5, alpha: Math.min(1, 4 - time), maxWidth: view.w - 40 });
-      }
-    },
+    render,
   };
 }
