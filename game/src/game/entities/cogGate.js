@@ -5,12 +5,24 @@ import { P, glow, C } from '../iso.js';
 import { sprites } from '../sprites.js';
 
 export class CogGate extends Entity {
-  constructor(def) { super(def); this.jammed = false; this.ang = 0; }
-  get slot() { return { x: this.x + 0.5, y: this.y + 1.3 }; }
-  update(dt) { this.on = this.jammed; if (!this.jammed) this.ang += dt * 1.4; }
+  // axis 'x' (default): cog on a wall running along x, slot just south of it.  axis 'y': wall runs along y, slot just east.
+  constructor(def) { super(def); this.jammed = false; this.ang = 0; this.axis = def.axis || 'x'; this._jt = 0; this._jit = 0; this._said = false; }
+  get face() { return this.axis === 'y' ? { x: this.x + 1, y: this.y + 0.5 } : { x: this.x + 0.5, y: this.y + 1 }; }
+  get slot() { return this.axis === 'y' ? { x: this.x + 1.3, y: this.y + 0.5 } : { x: this.x + 0.5, y: this.y + 1.3 }; }
+  get attach() { const f = this.face; return { x: f.x, y: f.y, z: 1.0 }; }
+  update(dt, w) {
+    this.on = this.jammed;
+    if (!this.jammed) { this.ang += dt * 1.4; return; }
+    this._jit = Math.max(0, this._jit - dt * 4);
+    this._jt += dt;
+    if (this._jt >= 0.5) { // stutter every ~0.5s: twitch, sparks, occasional low grind
+      this._jt = 0; this._jit = 1; this.ang += (Math.random() - 0.3) * 0.12;
+      if (w) { w.juice('spark', this.slot.x, this.slot.y); if (Math.random() < 0.35) w.sfx('cog_jam', { volume: 0.12 }); }
+    }
+  }
   get depth() { return this.x + this.y + 0.5; }
   draw(ctx, t, w) {
-    const [sx, sy] = P(this.x + 0.5, this.y + 1, 1.5);
+    const f = this.face, [sx0, sy0] = P(f.x, f.y, 1.5), jx = this.jammed ? Math.sin(t * 95) * 2.5 * this._jit : 0, sx = sx0 + jx, sy = sy0 + (this.jammed ? Math.cos(t * 83) * 1.5 * this._jit : 0);
     const crow = w && w.crow, near = crow && crow.carry && !this.jammed && Math.hypot(this.slot.x - crow.x, this.slot.y - crow.y) < 2.6;
     // drive shaft + housing on the wall
     ctx.fillStyle = '#1e1d1a'; ctx.fillRect(sx - 5, sy + 30, 10, 46); ctx.fillStyle = 'rgba(120,70,35,.5)'; ctx.fillRect(sx - 5, sy + 50, 10, 6);

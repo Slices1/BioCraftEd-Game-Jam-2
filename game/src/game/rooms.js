@@ -58,7 +58,7 @@ export const ROOMS = [
     ents: [
       { type: 'vent', id: 'V2', at: [4, 2] },
       { type: 'stick', id: 'S1', at: [2, 2] },
-      { type: 'cog', id: 'COG', at: [7, 0] },
+      { type: 'cog', id: 'COG', at: [0, 4], axis: 'y' },
       { type: 'suit', id: 'suitB', at: [8, 8] },
     ],
   },

@@ -84,10 +84,12 @@ export function createWorld(game) {
     else if (kind === 'jack') { fx.shake.add(0.3); fx.hitstop(0.07); fx.flash('#bff8ff', 0.22, 0.25); fx.burst('sparks', s.x, s.y - 50, { count: 26, color: ['#4ff3ff', '#ffffff', '#ffd89a'] }); }
     else if (kind === 'land') { fx.shake.add(amt); fx.burst('dust', s.x, s.y, { count: 14, color: ['#6a655c', '#8a7f6a'] }); }
     else if (kind === 'steam') { fx.burst('dust', s.x, s.y - 20, { count: 22, color: ['#d8d4cc', '#b8b4ac', '#9a968e'], speed: [40, 140], alpha: 0.45 }); }
+    else if (kind === 'spark') { fx.burst('sparks', s.x, s.y - 40, { count: 8, color: ['#ffb63b', '#ffffff'], speed: [60, 200] }); }
     else if (kind === 'click') { fx.burst('sparks', s.x, s.y, { count: 10, color: ['#9dffb8', '#ffffff'], speed: [80, 220] }); fx.shake.add(0.08); }
     else if (kind === 'death') { fx.shake.add(0.7); fx.hitstop(0.12); fx.flash('#ff3b5c', 0.3, 0.45); fx.burst('sparks', s.x, s.y - 38, { count: 30, color: ['#ff3b4f', '#ffffff', '#ffb63b'] });
       fx.particles.emit(s.x, s.y - 38, { count: 22, speed: [60, 260], spread: Math.PI * 2, life: [0.9, 1.6], size: [5, 9], shape: 'confetti', gravity: 160, drag: 2.2, spin: [-6, 6], color: ['#0c0d10', '#1a1c22', '#262a33'] }); }
   };
+  w.popup = (str, x, y, o) => { const s = isoPt(x, y, 2.6); try { fx.popup(str, s.x, s.y, o); } catch (e) { /* ignore */ } };
   function isoPt(x, y, z) { return { x: (x - y) * 32, y: (x + y) * 16 - z * 32 }; }
 
   // ---- control ------------------------------------------------------------------------
@@ -142,7 +144,7 @@ export function createWorld(game) {
       crow.fly(dt, it.mx, it.my, w);
       if (it.act) {
         const cog = crow.carry && w.cogNear(crow), st = !crow.carry && w.stickNear(crow);
-        if (cog) { const s = w.get(crow.carry); s.used = true; s.carried = false; crow.carry = null; cog.jammed = true; w.sfx('cog_jam'); w.juice('land', cog.slot.x, cog.slot.y, 0.35); }
+        if (cog) { const s = w.get(crow.carry); s.used = true; s.carried = false; crow.carry = null; cog.jammed = true; w.sfx('cog_jam'); if (!cog._said) { cog._said = true; w.popup('Door jammed open — the mech is free', cog.x + 0.5, cog.y + 0.5, { color: '#ffb63b', size: 28, life: 2.6, rise: 40 }); } w.juice('land', cog.slot.x, cog.slot.y, 0.35); }
         else if (st) { st.carried = true; crow.carry = st.id; w.sfx('stick_pick'); }
         else if (crow.carry) { const s = w.get(crow.carry); s.rest(crow.x, crow.y); crow.carry = null; w.sfx('ui_click'); }
       } else if (it.swap) { const s = w.suitNear(crow); if (s) enterSuit(s); }

@@ -1,11 +1,27 @@
 import { Entity } from './base.js';
 import { P, box, glow, C } from '../iso.js';
 
-const DOOR = { top: '#5a4a3a', left: '#3a2a20', right: '#4a3628', edge: 'rgba(0,0,0,0.6)' };
+const DOOR = { top: '#6a5a48', left: '#3a2a20', right: '#52402f', edge: 'rgba(0,0,0,0.6)' };
+const FR = { top: '#5a584e', left: '#26251f', right: '#3a392f', edge: 'rgba(0,0,0,.6)' };
+const FLOOR = { top: '#141310', left: '#0b0a09', right: '#0f0e0c', edge: 'rgba(0,0,0,.5)' };
+// Blast door: ~2 levels tall, fills the whole tile. Its long axis follows the wall it sits in:
+// axis 'x' = wall runs along x (door spans x), axis 'y' = wall runs along y (door spans y).
 export class Door extends Entity {
-  constructor(def) { super(def); this.open = 0; this.isOpen = false; }
+  constructor(def) { super(def); this.open = 0; this.isOpen = false; this.shud = 0; this._ax = null; this._pl = null; this._cp = 0; }
   tiles() { return this.open < 0.8 ? [[this.x, this.y, 2]] : null; }
+  axis(w) {
+    if (this._ax) return this._ax;
+    const tall = (x, y) => w.baseHeight(x, y) >= 2;
+    return (this._ax = tall(this.x - 1, this.y) && tall(this.x + 1, this.y) ? 'x' : 'y');
+  }
+  cogs(w) { return (this.inputs || []).map((id) => w.get(id)).filter((e) => e && e.type === 'cog'); }
   update(dt, w) {
+    this.axis(w);
+    const jam = this.cogs(w).some((c) => c.jammed);
+    const plate = (this.inputs || []).some((id) => { const e = w.get(id); return e && e.type !== 'cog' && e.on; });
+    if (this._pl === true && !plate && jam) { this.shud = 0.8; w.sfx('door_open', { volume: 0.25, rate: 0.6 }); w.juice('land', this.x + 0.5, this.y + 0.5, 0.2); }
+    this._pl = plate;
+    this.shud = Math.max(0, this.shud - dt);
     const want = w.powered(this.inputs);
     const occupied = w.anyOnTile(this.x, this.y, true);
     if (want !== this.isOpen && (want || !occupied)) {
@@ -13,25 +29,51 @@ export class Door extends Entity {
       if (want) w.juice('steam', this.x + 0.5, this.y + 0.5);
       w.sfx('door_open', { volume: 0.7, rate: want ? 1 : 0.8 });
     }
-    const tgt = this.isOpen ? 1 : 0;
+    const tgt = this.isOpen ? 1 : 0, prev = this.open;
     this.open += Math.sign(tgt - this.open) * Math.min(Math.abs(tgt - this.open), dt * 2.5);
+    this._cp += Math.abs(this.open - prev) * 6 + (jam ? dt * 0.4 : 0);
   }
-  draw(ctx, t) {
-    const o = this.open, h = 2;
-    const fr = { top: '#4a4840', left: '#22211d', right: '#2e2d28', edge: 'rgba(0,0,0,.6)' };
-    box(ctx, this.x, this.y + 0.3, 0, 1, 0.4, 0.06, { top: '#141310', left: '#0b0a09', right: '#0f0e0c' });
-    // two leaves slide apart along x
-    const lw = 0.46 * (1 - o);
+  draw(ctx, t, w) {
+    const o = this.open, h = 2, ax = this.axis(w), x = this.x, y = this.y;
+    const jam = this.cogs(w).some((c) => c.jammed);
+    // b(u, v, z, du, dv, hh): u runs along the door's span, v across the wall thickness
+    const b = (u, v, z, du, dv, hh, c) => (ax === 'x' ? box(ctx, x + u, y + v, z, du, dv, hh, c) : box(ctx, x + v, y + u, z, dv, du, hh, c));
+    const pt = (u, v, z) => (ax === 'x' ? P(x + u, y + v, z) : P(x + v, y + u, z));
+    b(0, 0.2, 0, 1, 0.6, 0.05, FLOOR);                       // threshold slot
+    b(0, 0.15, 0, 0.16, 0.7, h + 0.4, FR);                   // posts
+    const sh = this.shud > 0 ? Math.sin(t * 90) * 0.025 * Math.min(1, this.shud * 2) : 0;
+    const lw = 0.34 * (1 - o);
     if (lw > 0.01) {
-      box(ctx, this.x + 0.04, this.y + 0.33, 0, lw, 0.34, h, DOOR);
-      box(ctx, this.x + 0.96 - lw, this.y + 0.33, 0, lw, 0.34, h, DOOR);
-      const [a, b] = P(this.x + 0.5, this.y + 0.67, h * 0.5);
-      ctx.save(); ctx.strokeStyle = 'rgba(224,170,40,.5)'; ctx.lineWidth = 2; ctx.setLineDash([5, 5]);
-      ctx.beginPath(); ctx.moveTo(a - 28 * (1 - o), b - 14 * (1 - o) - 20); ctx.lineTo(a - 28 * (1 - o), b - 14 * (1 - o) + 16); ctx.stroke(); ctx.restore();
+      b(0.16 + sh, 0.3, 0, lw, 0.4, h, DOOR);
+      b(0.84 - lw - sh, 0.3, 0, lw, 0.4, h, DOOR);
+      const [a, c2] = pt(0.5, 0.7, h * 0.5);
+      ctx.save(); ctx.strokeStyle = 'rgba(224,170,40,.55)'; ctx.lineWidth = 3; ctx.setLineDash([6, 6]);
+      ctx.beginPath(); ctx.moveTo(a, c2 - 26); ctx.lineTo(a, c2 + 26); ctx.stroke(); ctx.restore();
     }
-    box(ctx, this.x - 0.02, this.y + 0.3, 0, 0.08, 0.4, h + 0.15, fr);
-    box(ctx, this.x + 0.94, this.y + 0.3, 0, 0.08, 0.4, h + 0.15, fr);
-    box(ctx, this.x - 0.02, this.y + 0.3, h, 1.04, 0.4, 0.15, fr);
-    glow(ctx, this.x + 0.5, this.y + 0.7, h + 0.05, 2.5, this.isOpen ? C.green : C.red);
+    b(0.84, 0.15, 0, 0.16, 0.7, h + 0.4, FR);
+    b(0, 0.12, h, 1, 0.76, 0.4, FR);                         // lintel
+    const lc = jam ? C.amber : this.isOpen ? C.green : C.red;
+    glow(ctx, x + 0.5, y + 0.5, h + 0.2, 3.5, lc);
+    if (jam) {
+      // stick wedged in the door track
+      const [s0x, s0y] = pt(0.2, 0.75, 0.15), [s1x, s1y] = pt(0.8, 0.75, 0.75);
+      ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = '#4a3420'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(s0x, s0y); ctx.lineTo(s1x, s1y); ctx.stroke();
+      ctx.strokeStyle = '#9a7a4e'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(s0x, s0y - 1); ctx.lineTo(s1x, s1y - 1); ctx.stroke();
+      const [lx, ly] = pt(0.5, 0.5, h + 0.75);
+      ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.8)'; ctx.strokeText('JAMMED', lx, ly); ctx.fillStyle = C.amber; ctx.fillText('JAMMED', lx, ly);
+      ctx.restore();
+    }
+    // drive cable from each cog to this door; pulses travel while the door moves / is jammed
+    for (const cg of this.cogs(w)) {
+      const a = cg.attach, [x0, y0] = P(a.x, a.y, a.z), [x1, y1] = P(x + 0.5, y + 0.5, h + 0.2);
+      const mx = (x0 + x1) / 2, my = Math.max(y0, y1) + 18, ph = this._cp;
+      ctx.save(); ctx.lineCap = 'round';
+      ctx.strokeStyle = '#1a1814'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo(mx, my, x1, y1); ctx.stroke();
+      ctx.strokeStyle = cg.jammed ? C.amber : C.cyan; ctx.globalAlpha = 0.55; ctx.lineWidth = 2; ctx.stroke();
+      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.95; ctx.fillStyle = cg.jammed ? C.amber : C.cyan;
+      for (let i = 0; i < 4; i++) { const u = (ph + i / 4) % 1, q = 1 - u;
+        ctx.beginPath(); ctx.arc(q * q * x0 + 2 * q * u * mx + u * u * x1, q * q * y0 + 2 * q * u * my + u * u * y1, 3, 0, Math.PI * 2); ctx.fill(); }
+      ctx.restore();
+    }
   }
 }
