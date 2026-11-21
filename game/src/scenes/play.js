@@ -141,9 +141,21 @@ export function playScene(game) {
     hud(ctx, cur);
   }
 
+  function actions() {
+    const c = w.ctrl, cr = w.crow;
+    if (cr.dead > 0 || w.won) return { a: '', b: '' };
+    if (c.jack) { const l = w.get(c.jack).label(w); return { a: l || 'Act', b: 'Exit' }; }
+    const a = w.activeBody();
+    if (a.type === 'suit') return { a: w.machineNear(a) ? 'Jack in' : '', b: 'Exit' };
+    let la = '';
+    if (cr.carry) la = w.cogNear(cr) ? 'Jam stick' : 'Drop stick'; else if (w.stickNear(cr)) la = 'Pick up stick';
+    return { a: la, b: w.suitNear(cr) ? 'Enter mech' : '' };
+  }
+
   function drawPrompt(ctx) {
-    const p = w.prompt();
-    if (!p || w.crow.dead > 0) return;
+    if (view.isTouch) return;
+    const ac = actions(), p = [ac.a && `[E] ${ac.a}`, ac.b && `[Q] ${ac.b}`].filter(Boolean).join('   ');
+    if (!p) return;
     const c = w.ctrl, a = c.jack ? (w.get(w.get(c.jack).pilot) || w.activeBody()) : w.activeBody();
     const [sx, sy0] = P(a.x, a.y, (a.z || 0) + (a.type === 'suit' ? 2.6 : 1.5));
     const k = 1 / Math.max(0.6, cam.zoom), sy = sy0 - Math.abs(Math.sin(t * 3)) * 3 * k;
@@ -164,8 +176,8 @@ export function playScene(game) {
       text(ctx, cur.hint || '', view.w / 2, view.h * 0.2 + 44, { size: 24, outline: 4, color: '#ffb63b', alpha: Math.min(1, banner), maxWidth: view.w - 40 });
     }
     if (t < 6 && w.roomIdx === 0) {
-      const h = view.isTouch ? 'Stick: move · A: act · B: enter/exit suit · ↺ reset' : 'WASD move · E act · Q/Shift suit · R reset';
-      text(ctx, h, view.w / 2, view.h - view.safe.bottom - (view.isTouch ? (view.isPortrait ? 260 : 150) : 40), { size: 22, outline: 4, alpha: Math.min(1, 6 - t), maxWidth: view.w - 40 });
+      const h = view.isTouch ? 'Stick: move · A/B: contextual · ↺ reset' : 'WASD move · E act · Q/Shift suit · R reset';
+      text(ctx, h, view.w / 2, view.isTouch ? view.safe.top + 70 : view.h - view.safe.bottom - 40, { size: 22, outline: 4, alpha: Math.min(1, 6 - t), maxWidth: view.w - 40 });
     }
     if (w.won) {
       ctx.fillStyle = `rgba(0,0,0,${Math.min(0.7, winT * 0.4)})`; ctx.fillRect(0, 0, view.w, view.h);
@@ -201,6 +213,7 @@ export function playScene(game) {
     update(dt) {
       t += dt; banner = Math.max(0, banner - dt); clearT = Math.max(0, clearT - dt);
       if (slowmo > 0) { slowmo -= dt / Math.max(0.05, game.loop.timeScale); game.loop.timeScale = slowmo > 0 ? 0.35 : 1; }
+      { const ac = actions(); input.setTouchButton('buttonA', { visible: !!ac.a, hint: ac.a }).setTouchButton('buttonB', { visible: !!ac.b, hint: ac.b }); }
       input.stick(stick);
       // screen direction -> world: screen up = world (-x, -y)
       let mx = stick.x + stick.y, my = stick.y - stick.x;

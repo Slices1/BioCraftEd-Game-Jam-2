@@ -115,6 +115,7 @@ export function createInput(canvas, view, opts = {}) {
       refresh();
     },
     renderTouch,
+    setTouchButton(id, v) { for (const b of vbuttons) if (b.id === id) { if (v.visible === false && b.visible !== false) { b.down = false; b.pid = null; } if ('visible' in v) b.visible = v.visible !== false; if ('hint' in v) b.hint = v.hint || ''; } return input; },
   };
 
   function act(name) {
@@ -324,9 +325,9 @@ export function createInput(canvas, view, opts = {}) {
     const R = vbuttons[0].size / s;
     vbuttons.forEach((b, i) => {
       b.r = b.size / s;
-      const off = i === 0 ? [0, 0] : [-1.3 * i, -2.3 * i]; // stack up-left of A, away from joystick
-      b.x = view.w - sf.right - m - R + off[0] * R;
-      b.y = view.h - sf.bottom - m - R + off[1] * R;
+      // all on the right edge: 1st at the corner, 2nd stacked above, 3rd (reset) above that
+      b.x = view.w - sf.right - m - R;
+      b.y = view.h - sf.bottom - m - R - (i === 0 ? 0 : i === 1 ? 2.3 * R : 4.4 * R);
     });
   }
 
@@ -334,6 +335,7 @@ export function createInput(canvas, view, opts = {}) {
     if (!touchActive()) return;
     layoutTouch();
     for (const b of vbuttons) {
+      if (b.visible === false) continue;
       if (Math.hypot(p.x - b.x, p.y - b.y) <= b.r * 1.3) {
         if (b.pid == null) { b.pid = p.id; b.down = true; }
         p.claimed = 'vbutton:' + b.id;
@@ -342,7 +344,8 @@ export function createInput(canvas, view, opts = {}) {
     }
     if (joystick.enabled && !joystick.active) {
       const z = joystick.zone, fx = p.x / view.w, fy = p.y / view.h;
-      if (fx >= z.x0 && fx <= z.x1 && fy >= z.y0 && fy <= z.y1) {
+      const inBtn = vbuttons.some((b) => Math.abs(p.x - b.x) <= b.r * 1.6 && Math.abs(p.y - b.y) <= b.r * 1.6);
+      if (!inBtn && fx >= z.x0 && fx <= z.x1 && fy >= z.y0 && fy <= z.y1) {
         const R = joystick.radius, sf = view.safe;
         joystick.active = true; joystick.id = p.id;
         joystick.bx = clamp(p.x, sf.left + R * 0.7, view.w - sf.right - R * 0.7);
@@ -409,10 +412,12 @@ export function createInput(canvas, view, opts = {}) {
       ctx.globalAlpha = 1;
     }
     for (const b of vbuttons) {
+      if (b.visible === false) continue;
       ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
       ctx.fillStyle = b.down ? 'rgba(255,255,255,0.45)' : b.color || 'rgba(255,255,255,0.15)';
       ctx.fill();
       ctx.lineWidth = lw; ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.stroke();
+      if (b.hint) text(ctx, b.hint, b.x - b.r - 10 / s, b.y, { size: 18 / s, align: 'right', color: '#fff3dc', outline: 4, maxWidth: 150 / s });
       if (b.label) text(ctx, b.label, b.x, b.y + 1, { size: b.r * (b.label.length > 2 ? 0.38 : 0.6), color: '#fff', maxWidth: b.r * 1.7 });
     }
     ctx.restore();
