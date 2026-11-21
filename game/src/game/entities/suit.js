@@ -3,6 +3,7 @@ import { move, settle } from '../physics.js';
 import { P, box, shadow, glow, facing, C, METAL } from '../iso.js';
 import { sprites, dir8 } from '../sprites.js';
 
+const DIRS8 = ['e', 'se', 's', 'sw', 'w', 'nw', 'n', 'ne'];
 const SUIT = { top: '#4a5260', left: '#232831', right: '#333a46', edge: 'rgba(0,0,0,0.6)' };
 export class Suit extends Body {
   constructor(def) {
@@ -14,7 +15,13 @@ export class Suit extends Body {
     this.vx = mx * sp; this.vy = my * sp;
     const moved = move(w, this, this.vx * dt, this.vy * dt);
     this.face = facing(this.vx, this.vy, this.face);
-    if (Math.hypot(mx, my) > 0.2) this.dir = dir8(this.vx, this.vy, this.dir);
+    if (Math.hypot(mx, my) > 0.2) { // hysteresis: only turn when clearly past the boundary of the current 45-degree sector
+      const nd = dir8(this.vx, this.vy, this.dir), cur = this.dir;
+      if (!cur || nd === cur) this.dir = nd || cur;
+      else { const a = Math.atan2((this.vx + this.vy) * 0.5, this.vx - this.vy), c = DIRS8.indexOf(cur) * Math.PI / 4;
+        let dd = Math.abs(a - (c > Math.PI ? c - 2 * Math.PI : c)); dd = Math.min(dd, 2 * Math.PI - dd);
+        if (dd > Math.PI / 8 + 0.3) this.dir = nd; }
+    }
     if (moved && Math.hypot(mx, my) > 0.2) {
       this.walkT += dt; this.stepT -= dt;
       if (this.stepT <= 0) { this.stepT = 0.38; w.sfx('step', { volume: 0.55, pitchVar: 0.12 }); }
@@ -31,8 +38,13 @@ export class Suit extends Body {
     const d = this.dir || this.face, walking = piloted && Math.hypot(this.vx, this.vy) > 0.2;
     let ok;
     if (!piloted && !jacked) ok = sprites.drawH(ctx, 'suit_off', sx, sy + 6, 92, d.includes('w'));
-    else if (walking && Math.floor(this.walkT * 6) % 2 && (d === 'e' || d === 'w' || d === 'se' || d === 'sw')) ok = sprites.drawH(ctx, 'suit_walk_a', sx, sy + 6, 92, d.includes('w'));
-    else ok = sprites.drawDir(ctx, 'suit', d, sx, sy + 6 - (walking ? Math.abs(Math.sin(this.walkT * 10)) * 2 : 0), 92);
+    else {
+      const wk = walking ? this.walkT : 0, ph = Math.sin(wk * 9), bob = walking ? Math.abs(ph) * 3 : 0, sway = walking ? ph * 0.045 : 0;
+      const sq = walking ? 1 + Math.cos(wk * 18) * 0.012 : 1, stepA = walking && Math.sin(wk * 9) > 0 && (d === 'e' || d === 'w' || d === 'se' || d === 'sw');
+      ctx.save(); ctx.translate(sx, sy + 6 - bob); ctx.rotate(sway); ctx.scale(1 / sq, sq);
+      ok = stepA && sprites.has('suit_walk_a') && Math.abs(ph) > 0.5 ? sprites.drawH(ctx, 'suit_walk_a', 0, 0, 92, d.includes('w')) : sprites.drawDir(ctx, 'suit', d, 0, 0, 92);
+      ctx.restore();
+    }
     if (!ok) drawMech(ctx, t, sx, sy, this, piloted, jacked);
     if (this.carried && !piloted) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.25 + 0.15 * Math.sin(t * 3);
       ctx.strokeStyle = C.cyan; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(sx, sy, 26, 13, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }

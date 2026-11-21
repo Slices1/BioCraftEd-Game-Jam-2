@@ -2,6 +2,7 @@ import { Body } from './base.js';
 import { move } from '../physics.js';
 import { P, shadow, glow, poly, facing, C } from '../iso.js';
 import { sprites, dir8 } from '../sprites.js';
+const FACE_V = { se: 'se', sw: 'se', ne: 'ne', nw: 'ne', e: 'e', w: 'e', n: 'n', s: 's' };
 
 export class Crow extends Body {
   constructor(def) {
@@ -30,11 +31,18 @@ export class Crow extends Body {
     const gz = Math.max(0, this.groundZ || 0);
     shadow(ctx, this.x, this.y, gz, 14 - (this.z - gz) * 2, 0.4);
     const [sx, sy] = P(this.x, this.y, this.z);
-    const d = this.dir || this.face, sp8 = Math.hypot(this.vx, this.vy);
-    const fr = Math.floor(t * (sp8 > 0.3 ? 9 : 4)) % 2 ? 'crow_flyb' : 'crow_flya';
-    const side = d !== 'n' && d !== 's';
-    if (this.carry && side && sprites.drawDir(ctx, 'crow_stick', d, sx, sy + 8, 62)) return;
-    if (sprites.drawDir(ctx, fr, d, sx, sy + 8, 58)) return this.drawCarry(ctx, sx, sy, d.includes('w') ? -1 : 1);
+    const d = this.dir || this.face, sp8 = Math.hypot(this.vx, this.vy), moving = sp8 > 0.3;
+    this._amp = (this._amp || 0) + ((moving ? 1 : 0) - (this._amp || 0)) * 0.08;
+    const slow = Math.sin(t * (moving ? 5 : 2.4)), bob = slow * 1.6 * (0.5 + this._amp), by = sy + 8 + bob;
+    const base = 'crow_flya', sq = 1 + slow * 0.025 * (0.4 + this._amp), W = 58;
+    const has = sprites.has(`${base}_${FACE_V[d] || 'e'}`);
+    if (has) {
+      ctx.save(); ctx.translate(sx, by); ctx.scale(1 / sq, sq); // gentle squash/stretch only, no frame snapping
+      sprites.drawDir(ctx, base, d, 0, 0, W);
+      { ctx.globalAlpha = 0.5 + 0.5 * slow * this._amp * 0.8; sprites.drawDir(ctx, 'crow_flyb', d, 0, 0, W); }
+      ctx.restore();
+      return this.drawCarry(ctx, sx, by, d);
+    }
     const flip = this.face[1] === 'w' ? -1 : 1, back = this.face[0] === 'n';
     const sp = Math.hypot(this.vx, this.vy), rate = 14 + sp * 3, ph = t * rate;
     const flap = Math.sin(ph), tilt = Math.min(0.25, sp * 0.05);
@@ -63,15 +71,16 @@ export class Crow extends Body {
     ctx.strokeStyle = '#1b1b20'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(2, -4); ctx.lineTo(-1, 1); ctx.moveTo(6, -4); ctx.lineTo(4, 1); ctx.stroke();
     wing(1, '#14151c');
     ctx.restore();
-    this.drawCarry(ctx, sx, sy, flip);
+    this.drawCarry(ctx, sx, sy + 8, this.face);
   }
-  drawCarry(ctx, sx, sy, flip = 1) {
+  drawCarry(ctx, sx, sy, d) {
     if (!this.carry) return;
-    ctx.save(); ctx.translate(sx, sy); ctx.scale(flip * 1.3, 1.3);
-    ctx.strokeStyle = '#5a4128'; ctx.lineWidth = 4; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(10, -14); ctx.lineTo(44, -24); ctx.moveTo(34, -21); ctx.lineTo(40, -31); ctx.stroke();
-    ctx.strokeStyle = '#8a6a42'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(11, -15.5); ctx.lineTo(43, -25.5); ctx.stroke();
-    ctx.fillStyle = '#56663a'; ctx.beginPath(); ctx.ellipse(41, -33, 4, 2, -0.8, 0, Math.PI * 2); ctx.fill();
+    // same thin twig for every facing: held at the beak, pointing forward
+    const B = { e: [19, -29, -0.15], se: [14, -21, 0.25], s: [4, -15, 0.5], ne: [14, -33, -0.45], n: [-3, -34, -0.7] };
+    const k = { sw: 'se', w: 'e', nw: 'ne' }[d] || d, m = d.includes('w') ? -1 : 1, [bx, by, a] = B[k] || B.e;
+    ctx.save(); ctx.translate(sx + bx * m, sy + by); ctx.rotate(a * m); ctx.lineCap = 'round';
+    ctx.strokeStyle = '#4a3420'; ctx.lineWidth = 2.6; ctx.beginPath(); ctx.moveTo(-8 * m, 1); ctx.lineTo(10 * m, -1); ctx.moveTo(4 * m, -0.4); ctx.lineTo(8 * m, -5); ctx.stroke();
+    ctx.strokeStyle = '#9a7a4e'; ctx.lineWidth = 0.9; ctx.beginPath(); ctx.moveTo(-8 * m, 0.2); ctx.lineTo(10 * m, -1.8); ctx.stroke();
     ctx.restore();
   }
 }

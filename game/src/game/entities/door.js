@@ -68,16 +68,18 @@ export class Door extends Entity {
       ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.8)'; ctx.strokeText('JAMMED', lx, ly); ctx.fillStyle = C.amber; ctx.fillText('JAMMED', lx, ly);
       ctx.restore();
     }
-    // drive cable from each cog to this door; pulses travel while the door moves / is jammed
+    // rusty chain conduit from each cog's base along the floor/wall line to this door; faint glow pulse only while active
     for (const cg of this.cogs(w)) {
-      const a = cg.attach, [x0, y0] = P(a.x, a.y, a.z), [x1, y1] = P(x + 0.5, y + 0.5, h + 0.2);
-      const mx = (x0 + x1) / 2, my = Math.max(y0, y1) + 18, ph = this._cp;
-      ctx.save(); ctx.lineCap = 'round';
-      ctx.strokeStyle = '#1a1814'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo(mx, my, x1, y1); ctx.stroke();
-      ctx.strokeStyle = cg.jammed ? C.amber : C.cyan; ctx.globalAlpha = 0.55; ctx.lineWidth = 2; ctx.stroke();
-      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.95; ctx.fillStyle = cg.jammed ? C.amber : C.cyan;
-      for (let i = 0; i < 4; i++) { const u = (ph + i / 4) % 1, q = 1 - u;
-        ctx.beginPath(); ctx.arc(q * q * x0 + 2 * q * u * mx + u * u * x1, q * q * y0 + 2 * q * u * my + u * u * y1, 3, 0, Math.PI * 2); ctx.fill(); }
+      const f = cg.face, dx = x + 0.5, dy = y + 0.5, z0 = 0.08;
+      const pts = [P(f.x, f.y, 1.0), P(f.x, f.y, z0), P(dx, f.y, z0), P(dx, dy, z0)];
+      const act = cg.jammed || this.isOpen, pul = act ? 0.5 + 0.5 * Math.sin(this._cp * Math.PI * 2) : 0;
+      ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      const path = () => { ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]); };
+      ctx.translate(0, 3); path(); ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 5; ctx.stroke(); ctx.translate(0, -3);
+      path(); ctx.strokeStyle = '#2a1d14'; ctx.lineWidth = 5; ctx.stroke();
+      ctx.strokeStyle = '#8a5230'; ctx.lineWidth = 3; ctx.setLineDash([4, 3]); ctx.stroke();
+      ctx.strokeStyle = '#b8794a'; ctx.lineWidth = 1; ctx.setLineDash([2, 5]); ctx.lineDashOffset = 1; ctx.stroke(); ctx.setLineDash([]);
+      if (act) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.08 + 0.12 * pul; path(); ctx.strokeStyle = cg.jammed ? C.amber : C.cyan; ctx.lineWidth = 7; ctx.stroke(); }
       ctx.restore();
     }
   }

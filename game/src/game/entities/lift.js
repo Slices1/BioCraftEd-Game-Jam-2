@@ -33,9 +33,13 @@ export class Lift extends Entity {
     const bottom = Math.min(this.offL, this.onL, 0) - (this.offL < 0 ? 0 : 0);
     if (this.offL < 0) tileTop(ctx, this.x, this.y, -1, '#050608');
     const h = this.vis - bottom;
-    if (h > 0.05) box(ctx, this.x + 0.03, this.y + 0.03, bottom, 0.94, 0.94, h - 0.02, { top: '#1b1f26', left: '#14171c', right: '#181b21' });
-    const [lx, ly] = P(this.x + 0.5, this.y + 0.5, Math.max(0, bottom));
-    if (sprites.draw(ctx, this.vis > (this.offL + this.onL) / 2 ? 'lift_high' : 'lift_low', null, lx, ly + 22, 66)) return;
+    if (h > 0.05) { // scissor column: narrow dark shaft under the deck (no floating sprite/shadow)
+      box(ctx, this.x + 0.18, this.y + 0.18, bottom, 0.64, 0.64, h - 0.1, { top: '#1b1f26', left: '#15181d', right: '#1a1d23' });
+      const [ax, ay] = P(this.x + 0.5, this.y + 0.5, 0), [bx, by] = P(this.x + 0.5, this.y + 0.5, this.vis - 0.1);
+      ctx.save(); ctx.strokeStyle = '#3a414c'; ctx.lineWidth = 2;
+      for (let k = 0; k < 3; k++) { const y0 = ay + (by - ay) * k / 3, y1 = ay + (by - ay) * (k + 1) / 3; ctx.beginPath(); ctx.moveTo(ax - 12, y0); ctx.lineTo(ax + 12, y1); ctx.moveTo(ax + 12, y0); ctx.lineTo(ax - 12, y1); ctx.stroke(); }
+      ctx.restore();
+    }
     box(ctx, this.x + 0.03, this.y + 0.03, this.vis - 0.12, 0.94, 0.94, 0.12, PLAT);
     const col = this.on ? C.cyan : '#2a4a50';
     ctx.save(); ctx.shadowColor = col; ctx.shadowBlur = this.on ? 10 : 0;
