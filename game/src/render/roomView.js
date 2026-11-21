@@ -143,7 +143,7 @@ export function createRoomView(r3, state) {
   r3.fitIso(camera, center, GW, GH, 2);
 
   // ---- lights
-  const hemi = new THREE.HemisphereLight(0x7fb7c4, 0x6b3a28, 1.25);
+  const hemi = new THREE.HemisphereLight(0x8fc3cf, 0x7a4430, 1.6);
   scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xffd2a0, 2.6);
   const R = Math.sqrt(GW * GW + GH * GH) / 2 + 2.5;
@@ -363,10 +363,19 @@ export function createRoomView(r3, state) {
   const pistonSlam = (e) => !!(e.slammed ?? e.active ?? e.down ?? e.on ?? false);
   const laserActive = (e) => (e.active !== undefined ? !!e.active : e.on !== undefined ? !!e.on : e.firing !== undefined ? !!e.firing : true);
 
+  // X-ray silhouettes: bodies stay visible (tinted) when hidden behind walls.
+  const xray = (obj, color) => {
+    const m = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.45, depthWrite: false, depthFunc: THREE.GreaterDepth });
+    const list = [];
+    obj.traverse((o) => { if (o.isMesh && !o.userData.xray && !(o.material && o.material.side === THREE.BackSide)) list.push(o); });
+    for (const o of list) { const x = new THREE.Mesh(o.geometry, m); x.userData.xray = true; x.renderOrder = 10; x.castShadow = false; o.add(x); }
+  };
+
   // body records (created now so busy() etc work from the start)
   const mech = (() => {
     const root = new THREE.Group();
     const obj = getModel('mech');
+    xray(obj, 0x3ff0ff);
     root.add(obj);
     scene.add(root);
     return {
@@ -378,6 +387,7 @@ export function createRoomView(r3, state) {
   const crow = (() => {
     const root = new THREE.Group();
     const obj = getModel('crow');
+    xray(obj, 0xffcc44);
     root.add(obj);
     scene.add(root);
     return {
