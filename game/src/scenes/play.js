@@ -105,6 +105,71 @@ export function playScene(game) {
     ctx.restore();
   }
 
+  // ---- static layer cache: floors, pits, back walls + overgrowth of a room baked into one offscreen canvas --------
+  const layerCache = new Map(), LS = 1.6;
+  function roomBounds(r, WH) {
+    return { x0: (r.ox - (r.oy + r.h)) * 32 - 48, x1: (r.ox + r.w - r.oy) * 32 + 48, y0: (r.ox + r.oy) * 16 - WH * 32 - 60, y1: (r.ox + r.w + r.oy + r.h) * 16 + 48 };
+  }
+  function drawStatic(ctx, r, isCur) {
+    const dec = decorFor(r), WH = isCur ? 2.6 : 0.5, items = [];
+    ctxRef = ctx;
+    for (let ty = r.oy; ty < r.oy + r.h; ty++) for (let tx = r.ox; tx < r.ox + r.w; tx++) {
+      if (w.tileRoom(tx, ty) !== r.idx) continue;
+      const [sx, sy] = P(tx, ty, 0), bh = w.baseHeight(tx, ty), seed = tx * 13 + ty * 7;
+      if (!(bh <= 0 || w.isVent(tx, ty))) continue;
+      floor(sx, sy, bh < 0 ? 'pit' : w.isVent(tx, ty) ? 'grate' : 'floor', tx, ty);
+      if (bh < 0) chasm(tx, ty, items);
+      const d = dec.floor.get(tx * 1000 + ty);
+      if (d && env && env.drawOvergrowth) envSafe(() => env.drawOvergrowth(ctx, sx, sy, d, seed, t));
+      if (env && envOk && env.drawWall) {
+        if (ty - 1 === r.oy && w.baseHeight(tx, ty - 1) >= 2) items.push({ d: tx + ty - 0.5, f: () => { envSafe(() => env.drawWall(ctx, sx, sy, WH, 'n', t, seed)); if (dec.vine(tx, ty, 'n')) envSafe(() => env.drawOvergrowth(ctx, sx, sy, 'vines_n', seed, t, WH * 32)); } });
+        if (tx - 1 === r.ox && w.baseHeight(tx - 1, ty) >= 2) items.push({ d: tx + ty - 0.5, f: () => { envSafe(() => env.drawWall(ctx, sx, sy, WH, 'w', t, seed + 5)); if (dec.vine(tx, ty, 'w')) envSafe(() => env.drawOvergrowth(ctx, sx, sy, 'vines_w', seed + 3, t, WH * 32)); } });
+      }
+    }
+    items.sort((p, q) => p.d - q.d); for (const it of items) it.f();
+  }
+  function staticLayer(r, isCur) {
+    const key = r.idx + (isCur ? 'c' : 'o') + (env ? 'e' : '') + (envOk ? '' : 'x');
+    let L = layerCache.get(key);
+    if (L) return L;
+    if (typeof document === 'undefined') return null;
+    const B = roomBounds(r, isCur ? 2.6 : 0.5), cv = document.createElement('canvas');
+    cv.width = Math.ceil((B.x1 - B.x0) * LS); cv.height = Math.ceil((B.y1 - B.y0) * LS);
+    const c = cv.getContext('2d'); c.setTransform(LS, 0, 0, LS, -B.x0 * LS, -B.y0 * LS);
+    const keep = ctxRef; drawStatic(c, r, isCur); ctxRef = keep;
+    L = { cv, B }; layerCache.set(key, L);
+    return L;
+  }
+  // per-room dynamic tile items (raised tiles, interior walls, vents, front stubs) — geometry only, built once
+  const tileItems = new Map();
+  function roomTiles(r) {
+    let list = tileItems.get(r.idx); if (list) return list;
+    list = [];
+    for (let ty = r.oy; ty < r.oy + r.h; ty++) for (let tx = r.ox; tx < r.ox + r.w; tx++) {
+      if (w.tileRoom(tx, ty) !== r.idx) continue;
+      const bh = w.baseHeight(tx, ty), vent = w.isVent(tx, ty);
+      const border = ty === r.oy || tx === r.ox || ty === r.oy + r.h - 1 || tx === r.ox + r.w - 1;
+      if (bh <= 0 && !vent) {
+        if (ty + 1 === r.oy + r.h - 1 && w.baseHeight(tx, ty + 1) >= 2) list.push({ k: 'stub', tx, ty, face: 'stub' });
+        if (tx + 1 === r.ox + r.w - 1 && w.baseHeight(tx + 1, ty) >= 2) list.push({ k: 'stub', tx, ty, face: 'stubR' });
+      } else if (vent) list.push({ k: 'vent', tx, ty });
+      else if (border && bh >= 2) list.push({ k: 'border', tx, ty });
+      else list.push({ k: bh >= 2 ? 'wall' : 'plat', tx, ty, h: bh });
+    }
+    tileItems.set(r.idx, list); return list;
+  }
+  function tallBlock(ctx, tx, ty, H, alpha, hole) {
+    const [sx, sy] = P(tx, ty, 0);
+    if (alpha < 1) { ctx.save(); ctx.globalAlpha = alpha; }
+    wallBlock(sx, sy, H, 'stub', tx, ty);
+    if (hole) { // crow-sized opening through the wall, on both visible faces
+      const dark = '#020203', rim = 'rgba(79,243,255,0.75)', zh = 0.9;
+      poly(ctx, [P(tx + 0.2, ty + 1, 0), P(tx + 0.8, ty + 1, 0), P(tx + 0.8, ty + 1, zh), P(tx + 0.2, ty + 1, zh)], dark, rim, 2);
+      poly(ctx, [P(tx + 1, ty + 0.2, 0), P(tx + 1, ty + 0.8, 0), P(tx + 1, ty + 0.8, zh), P(tx + 1, ty + 0.2, zh)], dark, rim, 2);
+    }
+    if (alpha < 1) ctx.restore();
+  }
+
   function render(ctx) {
     ctxRef = ctx;
     ctx.fillStyle = '#07080b'; ctx.fillRect(0, 0, view.w, view.h);
@@ -113,44 +178,77 @@ export function playScene(game) {
     const cur = w.rooms[w.roomIdx];
     const vis = cam.visible;
     const items = [];
+    const act = w.ctrl.jack ? (w.get(w.get(w.ctrl.jack).pilot) || w.activeBody()) : w.activeBody();
     for (const r of w.rooms) {
-      const dec = decorFor(r), isCur = r === cur, WH = isCur ? 2.6 : 0.5;
-      for (let ty = r.oy; ty < r.oy + r.h; ty++) for (let tx = r.ox; tx < r.ox + r.w; tx++) {
-        const [sx, sy] = P(tx, ty, 0);
-        if (sx < vis.x - 80 || sx > vis.x + vis.w + 80 || sy < vis.y - 120 || sy > vis.y + vis.h + 200) continue;
-        const bh = w.baseHeight(tx, ty), seed = tx * 13 + ty * 7;
-        const border = ty === r.oy || tx === r.ox || ty === r.oy + r.h - 1 || tx === r.ox + r.w - 1;
-        if (bh <= 0 || w.isVent(tx, ty)) {
-          floor(sx, sy, bh < 0 ? 'pit' : w.isVent(tx, ty) ? 'grate' : 'floor', tx, ty);
-          if (bh < 0) chasm(tx, ty, items);
-          const d = dec.floor.get(tx * 1000 + ty);
-          if (d && env && env.drawOvergrowth) envSafe(() => env.drawOvergrowth(ctx, sx, sy, d, seed, t));
-          if (env && envOk && env.drawWall) {
-            if (ty - 1 === r.oy && w.baseHeight(tx, ty - 1) >= 2) items.push({ d: tx + ty - 0.5, z: 0, f: () => { envSafe(() => env.drawWall(ctx, sx, sy, WH, 'n', t, seed)); if (dec.vine(tx, ty, 'n')) envSafe(() => env.drawOvergrowth(ctx, sx, sy, 'vines_n', seed, t, WH * 32)); } });
-            if (tx - 1 === r.ox && w.baseHeight(tx - 1, ty) >= 2) items.push({ d: tx + ty - 0.5, z: 0, f: () => { envSafe(() => env.drawWall(ctx, sx, sy, WH, 'w', t, seed + 5)); if (dec.vine(tx, ty, 'w')) envSafe(() => env.drawOvergrowth(ctx, sx, sy, 'vines_w', seed + 3, t, WH * 32)); } });
-            if (ty + 1 === r.oy + r.h - 1 && w.baseHeight(tx, ty + 1) >= 2) items.push({ d: tx + ty + 1.95, z: 0, f: () => envSafe(() => env.drawWall(ctx, sx, sy, 1, 'stub', t, seed)) });
-            if (tx + 1 === r.ox + r.w - 1 && w.baseHeight(tx + 1, ty) >= 2) items.push({ d: tx + ty + 1.95, z: 0, f: () => envSafe(() => env.drawWall(ctx, sx, sy, 1, 'stubR', t, seed)) });
-          }
-        } else if (border && bh >= 2 && env && envOk && env.drawWall) {
-          // walls are drawn as faces on the adjacent floor tiles
-        } else {
-          const h = bh >= 2 ? 0.45 : bh;
-          items.push({ d: tx + ty + 1, z: 0, f: () => wallBlock(sx, sy, h, 'stub', tx, ty) });
+      const isCur = r === cur, WH = isCur ? 2.6 : 0.5, B = roomBounds(r, WH);
+      if (B.x1 < vis.x || B.x0 > vis.x + vis.w || B.y1 < vis.y || B.y0 > vis.y + vis.h) continue;
+      const L = staticLayer(r, isCur);
+      if (L) ctx.drawImage(L.cv, L.B.x0, L.B.y0, L.cv.width / LS, L.cv.height / LS);
+      else drawStatic(ctx, r, isCur);
+      const dec = decorFor(r);
+      for (const q of roomTiles(r)) {
+        const { tx, ty } = q, [sx, sy] = P(tx, ty, 0), seed = tx * 13 + ty * 7;
+        if (q.k === 'stub') { if (env && envOk && env.drawWall) items.push({ d: tx + ty + 1.95, z: 0, f: () => envSafe(() => env.drawWall(ctx, sx, sy, 1, q.face, t, seed)) }); }
+        else if (q.k === 'border') { if (!(env && envOk && env.drawWall)) items.push({ d: tx + ty + 1, z: 0, f: () => wallBlock(sx, sy, 0.45, 'stub', tx, ty) }); }
+        else if (q.k === 'plat') items.push({ d: tx + ty + 1, z: 0, ph: q.h, f: () => wallBlock(sx, sy, q.h, 'stub', tx, ty) });
+        else { // interior tall wall / vent: full height in the current room, x-ray when the active body is behind it
+          const H = isCur ? 2.2 : 0.5;
+          let al = 1;
+          if (isCur && act && act.x + act.y < tx + ty + 1 && Math.abs((act.x - act.y) - (tx + 0.5 - ty - 0.5)) < 1.6 && tx + ty + 1 - (act.x + act.y) < 3.2) al = 0.35;
+          items.push({ d: tx + ty + (q.k === 'vent' ? 0.4 : 1), z: 0, f: () => tallBlock(ctx, tx, ty, H, al, q.k === 'vent') });
         }
       }
       if (env && env.drawProp) for (const p of dec.props) { const [sx, sy] = P(p.tx, p.ty, 0); items.push({ d: p.tx + p.ty + 0.9, z: 0, f: () => envSafe(() => p.over ? env.drawOvergrowth(ctx, sx, sy, p.kind, p.tx * 7 + p.ty, t) : env.drawProp(ctx, sx, sy, p.kind, t, p.tx * 7 + p.ty)) }); }
       if (isCur && dec.shaft && env && env.drawOvergrowth) { const [sx, sy] = P(dec.shaft[0], dec.shaft[1], 0); items.push({ d: 999, z: 0, f: () => envSafe(() => env.drawOvergrowth(ctx, sx, sy + 16, 'shaft', 1, t)) }); }
     }
-    for (const e of w.entities) items.push({ d: e.depth, z: e.z || 0, f: () => e.draw(ctx, t, w) });
-    items.sort((a, b) => a.d - b.d || a.z - b.z);
+    const beamSet = new Set(w.emitters);
+    for (const e of w.entities) {
+      if (e.hidden && e.type !== 'crow') continue;
+      const ez = Math.max(e.z || 0, e.type === 'crow' ? (e.groundZ || 0) : 0);
+      items.push({ d: e.depth, z: e.z || 0, ez: 'hw' in e ? ez : null, f: () => e.draw(ctx, t, w) });
+      if (beamSet.has(e)) items.push({ d: e.x + e.y + 1.5, z: 3, f: () => e.drawBeam(ctx, t) });
+    }
+    // painter's sort by (x+y) then height; bodies standing at/above a platform's height always draw over nearby platform tiles
+    items.sort((a, b) => {
+      if (a.ph != null && b.ez != null && b.ez >= a.ph - 0.05 && Math.abs(a.d - b.d) < 2.6) return -1;
+      if (b.ph != null && a.ez != null && a.ez >= b.ph - 0.05 && Math.abs(a.d - b.d) < 2.6) return 1;
+      return a.d - b.d || a.z - b.z;
+    });
     for (const it of items) it.f();
-    for (const e of w.emitters) e.drawBeam(ctx, t);
+    drawGuides(ctx, cur);
     fx.drawWorld(ctx);
     cam.end(ctx);
     grade(ctx);
-    if (bloomMod && bloomOk) { if (!bloom) bloomOk = safe(() => { bloom = bloomMod.createBloom({ strength: 0.45 }); }); if (bloom) bloomOk = safe(() => bloom.apply(ctx, game.canvas)); }
+    if (bloomMod && bloomOk) {
+      if (!bloom) bloomOk = safe(() => { bloom = bloomMod.createBloom({ strength: 0.45, quality: 1, targetMs: 21 }); });
+      if (bloom && bloom.quality > 0) bloomOk = safe(() => bloom.apply(ctx, game.canvas));
+    }
     cam.begin(ctx); drawPrompt(ctx); cam.end(ctx);
     hud(ctx, cur);
+  }
+
+  // in-world guides: lift decks ("Stand here"), free sticks, cracked walls that need the press
+  function guideText(ctx, str, x, y, z, col) {
+    const [sx, sy] = P(x, y, z), k = 1 / Math.max(0.6, cam.zoom);
+    ctx.save(); ctx.translate(sx, sy); ctx.scale(k, k); ctx.font = '700 15px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.strokeText(str, 0, 0); ctx.fillStyle = col; ctx.fillText(str, 0, 0); ctx.restore();
+  }
+  function drawGuides(ctx, cur) {
+    const a = w.activeBody(), pulse = 0.55 + 0.45 * Math.sin(t * 5);
+    for (const e of w.entities) {
+      if (e.room !== cur.idx) continue;
+      if (e.type === 'lift') {
+        const z = (e.vis ?? e.level) + 0.02, onIt = w.bodies.some((b) => b.type === 'suit' && b.onTile(e.x, e.y));
+        ctx.save(); ctx.globalAlpha = 0.5 + 0.4 * pulse; poly(ctx, [P(e.x + 0.06, e.y + 0.06, z), P(e.x + 0.94, e.y + 0.06, z), P(e.x + 0.94, e.y + 0.94, z), P(e.x + 0.06, e.y + 0.94, z)], null, e.on ? '#4ff3ff' : '#ffb63b', 3); ctx.restore();
+        if (!onIt && a && a.type === 'suit' && Math.hypot(a.x - e.x - 0.5, a.y - e.y - 0.5) < 4) guideText(ctx, e.on ? 'Stand here ▼' : 'Lift (needs power)', e.x + 0.5, e.y + 0.5, z + 1.1, e.on ? '#bff8ff' : '#ffd89a');
+      } else if (e.type === 'stick' && !e.carried && !e.used) {
+        const [sx, sy] = P(e.x, e.y, 0.05);
+        ctx.save(); ctx.globalAlpha = 0.35 + 0.4 * pulse; ctx.strokeStyle = '#ffb63b'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.ellipse(sx, sy, 26 + pulse * 6, 13 + pulse * 3, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+        if (a && a.type === 'crow' && !w.crow.carry) guideText(ctx, 'STICK', e.x, e.y, 1.1, '#ffd89a');
+      } else if (e.type === 'cracked' && !e.broken) {
+        guideText(ctx, 'CRACKED · needs the PRESS', e.x + 0.5, e.y + 0.5, 2.9, '#ffb63b');
+      }
+    }
   }
 
   function actions() {

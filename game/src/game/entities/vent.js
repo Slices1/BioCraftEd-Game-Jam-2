@@ -6,6 +6,7 @@ import { sprites } from '../sprites.js';
 export class Vent extends Entity {
   get depth() { return this.x + this.y + 1; }
   draw(ctx, t) {
+    return; // the hole in the wall is drawn by the play scene (tallBlock)
     const [sx, sy] = P(this.x + 0.5, this.y + 0.5, 1.2);
     if (sprites.draw(ctx, 'vent', null, sx, sy + 30, 64)) return;
     box(ctx, this.x, this.y, 1.7, 1, 1, 0.3, { top: '#3d4552', left: '#1d2129', right: '#2a303a', edge: 'rgba(0,0,0,.5)' });

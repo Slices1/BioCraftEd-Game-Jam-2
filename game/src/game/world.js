@@ -120,8 +120,8 @@ export function createWorld(game) {
     return best;
   };
   w.machineNear = (s) => w.entities.find((e) => e.console && Math.hypot(e.console.x + 0.5 - s.x, e.console.y + 0.5 - s.y) < 1.25) || null;
-  w.stickNear = (c) => w.entities.find((e) => e.type === 'stick' && !e.carried && !e.used && Math.hypot(e.x - c.x, e.y - c.y) < 0.75) || null;
-  w.cogNear = (c) => w.entities.find((e) => e.type === 'cog' && !e.jammed && Math.hypot(e.slot.x - c.x, e.slot.y - c.y) < 0.95) || null;
+  w.stickNear = (c) => w.entities.find((e) => e.type === 'stick' && !e.carried && !e.used && Math.hypot(e.x - c.x, e.y - c.y) < 1.1) || null;
+  w.cogNear = (c) => w.entities.find((e) => e.type === 'cog' && !e.jammed && Math.hypot(e.slot.x - c.x, e.slot.y - c.y) < 2) || null;
 
   function enterSuit(s) {
     crow.inside = s.id; crow.hidden = true; w.ctrl.active = s.id;
@@ -162,7 +162,8 @@ export function createWorld(game) {
       else if (it.swap) exitSuit(s);
     } else if (!crow.dead) {
       crow.fly(dt, it.mx, it.my, w);
-      if (it.act) {
+      const autoCog = crow.carry && w.cogNear(crow);
+      if (it.act || autoCog) {
         const cog = crow.carry && w.cogNear(crow), st = !crow.carry && w.stickNear(crow);
         if (cog) { const s = w.get(crow.carry); s.used = true; s.carried = false; crow.carry = null; cog.jammed = true; w.sfx('cog_jam'); if (!cog._said) { cog._said = true; w.popup('Door jammed open — the mech is free', cog.x + 0.5, cog.y + 0.5, { color: '#ffb63b', size: 28, life: 2.6, rise: 40 }); } w.juice('land', cog.slot.x, cog.slot.y, 0.35); }
         else if (st) { st.carried = true; crow.carry = st.id; w.sfx('stick_pick'); }
@@ -203,6 +204,7 @@ export function createWorld(game) {
     if (!w.snap) return;
     w.entities.forEach((e, i) => e.load(w.snap.ents[i]));
     w.ctrl = { ...w.snap.ctrl };
+    crow.dead = 0; w.cp = null;
     rebuildOverrides();
   };
   // continue-game support: the snapshot taken on room entry is serialisable

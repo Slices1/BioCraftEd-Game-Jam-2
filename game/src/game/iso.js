@@ -17,10 +17,26 @@ export function box(ctx, x, y, z, w, d, h, c = METAL) {
 export const METAL = { top: '#55534a', left: '#26251f', right: '#37352e', edge: 'rgba(0,0,0,0.55)' };
 export const DARK = { top: '#2e2d29', left: '#151412', right: '#1e1d1a', edge: 'rgba(0,0,0,0.6)' };
 export const C = { cyan: '#4ff3ff', amber: '#ffb63b', magenta: '#ff3bd4', red: '#ff3b4f', green: '#5dff8a' };
+// glow: cached radial sprite per colour (no per-frame shadowBlur / gradient creation)
+const GLOW = new Map();
+function glowSprite(color) {
+  let c = GLOW.get(color);
+  if (c !== undefined) return c;
+  c = null;
+  if (typeof document !== 'undefined') {
+    c = document.createElement('canvas'); c.width = c.height = 64;
+    const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, color); gr.addColorStop(0.18, color); gr.addColorStop(0.35, color); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr; g.globalAlpha = 1; g.fillRect(0, 0, 64, 64);
+    g.globalCompositeOperation = 'destination-in'; const fall = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    fall.addColorStop(0, 'rgba(0,0,0,1)'); fall.addColorStop(0.25, 'rgba(0,0,0,0.75)'); fall.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = fall; g.fillRect(0, 0, 64, 64);
+  }
+  GLOW.set(color, c); return c;
+}
 export function glow(ctx, x, y, z, r, color, blur = 3) {
-  const [sx, sy] = P(x, y, z);
-  ctx.save(); ctx.shadowColor = color; ctx.shadowBlur = r * blur; ctx.fillStyle = color;
-  ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  const [sx, sy] = P(x, y, z), sp = glowSprite(color);
+  if (sp) { const R = r + r * blur * 0.9; ctx.drawImage(sp, sx - R, sy - R, R * 2, R * 2); }
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill();
 }
 export function shadow(ctx, x, y, z, rx, a = 0.35) {
   const [sx, sy] = P(x, y, z);
