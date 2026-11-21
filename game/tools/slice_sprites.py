@@ -35,6 +35,11 @@ def runs(mask1d, mingap):
 
 def slice_sheet(path):
     rgba = key(Image.open(path))
+    if not path.stem.startswith(('crow', 'great_shiny', 'title', 'overgrowth')):
+        # bronze -> steel: desaturate 65% and cool slightly
+        c = rgba[..., :3].astype(np.float32); l = c.mean(2, keepdims=True)
+        c = l + (c - l) * 0.35; c[..., 2] *= 1.06; c[..., 0] *= 0.96
+        rgba[..., :3] = np.clip(c, 0, 255).astype(np.uint8)
     solid = rgba[..., 3] > 40
     pieces = []
     for y0, y1 in runs(solid.any(1), 12):
