@@ -68,8 +68,9 @@ export function createVoice(game) {
       ctx.font = '600 ' + size + 'px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
       for (const l of lines) tw = Math.max(tw, ctx.measureText(l).width);
       const bw = tw + padX * 2, bh = lines.length * lh + padY * 2;
-      const bottom = view.h - view.safe.bottom - (view.isTouch ? (portrait ? 300 : 40) : 56);
-      const x = view.w / 2 - bw / 2, y = bottom - bh;
+      // Portrait touch: the bottom belongs to the joystick/buttons, so subtitles sit in the free band above the room.
+      const bottom = view.h - view.safe.bottom - (view.isTouch ? 40 : 56);
+      const x = view.w / 2 - bw / 2, y = (view.isTouch && portrait) ? view.safe.top + view.h * 0.2 : bottom - bh;
       ctx.globalAlpha *= alpha;
       roundRect(ctx, x, y, bw, bh, 14);
       ctx.fillStyle = 'rgba(8,10,12,0.78)'; ctx.fill();

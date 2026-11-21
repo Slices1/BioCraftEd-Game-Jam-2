@@ -80,7 +80,8 @@ export function createR3(glCanvas, opts = {}) {
     if (!cam || !cam.isOrthographicCamera) return;
     const fit = cam.userData.fit || { needW: 11 * 1.15, needH: 11 };
     const aspect = cssW / Math.max(1, cssH);
-    const H = Math.max(fit.needH, fit.needW / aspect);
+    // Portrait phones are width-limited: trim the side margin so the room fills more of the screen.
+    const H = Math.max(fit.needH, (aspect < 1 ? fit.needW - 1.3 : fit.needW) / aspect);
     cam.top = H / 2;
     cam.bottom = -H / 2;
     cam.left = (-H * aspect) / 2;

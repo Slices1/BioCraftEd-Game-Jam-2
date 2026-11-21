@@ -368,8 +368,9 @@ export function createRoomView(r3, state) {
     const m = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.45, depthWrite: false, depthFunc: THREE.GreaterDepth });
     const list = [];
     obj.traverse((o) => { if (o.isMesh && !o.userData.xray && !(o.material && o.material.side === THREE.BackSide)) list.push(o); });
-    for (const o of list) { const x = new THREE.Mesh(o.geometry, m); x.userData.xray = true; x.renderOrder = 10; x.castShadow = false; o.add(x); }
+    for (const o of list) { const x = new THREE.Mesh(o.geometry, m); x.userData.xray = true; x.visible = false; x.renderOrder = 10; x.castShadow = false; o.add(x); }
   };
+  const xrDir = new THREE.Vector3(), xrP = new THREE.Vector3(), xrO = new THREE.Vector3(), xrRay = new THREE.Raycaster();
 
   // body records (created now so busy() etc work from the start)
   const mech = (() => {
@@ -809,6 +810,20 @@ export function createRoomView(r3, state) {
       }
       updateLasers(st);
       updateCrow(dt, st);
+      // X-ray only while a body is hidden behind level geometry (ray from the camera side to the body).
+      {
+        const dir = xrDir.set(0, 0, -1).applyQuaternion(camera.quaternion);
+        for (const b of [mech, crow]) {
+          let occluded = false;
+          for (const hy of (b === mech ? [0.35, 0.7, 1.0] : [0.12])) {
+            b.obj.getWorldPosition(xrP); xrP.y += hy;
+            xrRay.set(xrO.copy(xrP).addScaledVector(dir, -40), dir);
+            xrRay.far = 39.85;
+            if (xrRay.intersectObjects(tileMeshes, false).length) { occluded = true; break; }
+          }
+          if (b.xr !== occluded) { b.xr = occluded; b.obj.traverse((o) => { if (o.userData.xray) o.visible = occluded; }); }
+        }
+      }
       if (flash.userData.t > 0) { flash.userData.t -= dt; flash.intensity = Math.max(0, flash.userData.t) * 40; } else flash.intensity = 0;
       if (exitObj) {
         const s = 1 + Math.sin(time * 3) * 0.05;

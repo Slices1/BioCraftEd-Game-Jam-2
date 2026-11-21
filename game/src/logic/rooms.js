@@ -108,7 +108,7 @@ export const ROOMS = [
       { type: 'piston', id: 'PA', at: [7, 6], beat: [1, 2], phase: 0 },
       { type: 'piston', id: 'PB', at: [7, 4], beat: [1, 2], phase: 1 },
       { type: 'checkpoint', id: 'CP2', at: [7, 2] },
-      { type: 'laser', id: 'L5', at: [4, 2], dir: 'N', beat: [3, 4], phase: 0 },
+      { type: 'laser', id: 'L5', at: [4, 2], dir: 'N' }, // always on: only the parked mech can shield the crow
       { type: 'shiny', id: 'SH', at: [1, 1] },
       { type: 'deco', model: 'lamp', at: [1, 4] },
       { type: 'deco', model: 'barrel', at: [4, 7] },
