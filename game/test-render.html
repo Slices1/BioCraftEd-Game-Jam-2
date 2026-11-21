@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>render test</title>
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #0f1416; color: #ddd; font: 12px system-ui, sans-serif; }
+  canvas#gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #info { position: fixed; left: 8px; top: 8px; background: rgba(0,0,0,.5); padding: 6px 8px; border-radius: 6px; z-index: 5; white-space: pre; }
+  .lbl { position: fixed; z-index: 4; color: #fff; font-size: 11px; transform: translate(-50%, 0); text-shadow: 0 0 3px #000; pointer-events: none; }
+  #err { position: fixed; left: 8px; bottom: 8px; right: 8px; color: #ff8080; background: rgba(0,0,0,.7); padding: 6px; z-index: 9; white-space: pre-wrap; }
+</style>
+<script type="importmap">{"imports":{"three":"./vendor/three/three.module.js","three/addons/":"./vendor/three/addons/"}}</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="info">loading...</div>
+<div id="err" hidden></div>
+<script type="module">
+import * as THREE from 'three';
+import { createR3 } from './src/render/r3.js';
+import { loadAssets, getModel, MODEL_NAMES, isGLB } from './src/render/assets.js';
+import { createRoomView } from './src/render/roomView.js';
+
+const errBox = document.getElementById('err');
+function showErr(m) { errBox.hidden = false; errBox.textContent += m + '\n'; }
+window.addEventListener('error', (e) => showErr(String(e.message)));
+window.addEventListener('unhandledrejection', (e) => showErr(String(e.reason && e.reason.stack || e.reason)));
+
+const info = document.getElementById('info');
+const modelsMode = new URLSearchParams(location.search).has('models');
+const r3 = createR3(document.getElementById('gl'), { isTouch: 'ontouchstart' in window });
+window.r3 = r3;
+
+await loadAssets();
+
+function makeState() {
+  const map = [
+    '#########',
+    '#..~~..T#',
+    '#.gg-.-o#',
+    '#..--.oo#',
+    '##.#v#..#',
+    '#.......#',
+    '#.......#',
+    '#########',
+  ];
+  return {
+    map, exit: [5, 5], control: 'mech', won: false, events: [],
+    mech: { x: 3, z: 5, h: 0, dir: 'E', upgrades: { arm: true, legs: true }, grab: null },
+    crow: { x: 1, z: 5, inMech: false, carry: null },
+    ents: [
+      { type: 'plate', id: 'P1', at: [1, 5], on: false },
+      { type: 'door', id: 'D1', at: [2, 4], inputs: ['P1'], mode: 'any', dir: 'x' },
+      { type: 'cog', id: 'C1', at: [5, 3], door: 'D1', jammed: false },
+      { type: 'stick', id: 'S1', at: [3, 2] },
+      { type: 'crate', id: 'K1', at: [4, 6] },
+      { type: 'console', id: 'A1', at: [6, 5], grants: 'arm', used: false },
+      { type: 'console', id: 'A2', at: [7, 5], grants: 'legs', used: true },
+      { type: 'laser', id: 'L1', at: [7, 6], dir: 'W' },
+      { type: 'piston', id: 'PI1', at: [5, 6], beat: [[0], 4], slammed: false },
+      { type: 'checkpoint', id: 'CP1', at: [3, 6] },
+      { type: 'shiny', id: 'SH', at: [6, 1] },
+      { type: 'deco', id: 'd1', at: [1, 1], model: 'deco_lamp' },
+      { type: 'deco', id: 'd2', at: [2, 1], model: 'deco_barrel' },
+      { type: 'deco', id: 'd3', at: [3, 1], model: 'deco_mushrooms' },
+      { type: 'deco', id: 'd4', at: [4, 1], model: 'deco_moss' },
+      { type: 'deco', id: 'd5', at: [1, 2], model: 'deco_terminal', rot: 1.2 },
+      { type: 'deco', id: 'd6', at: [1, 3], model: 'deco_robot_arm' },
+      { type: 'deco', id: 'd7', at: [5, 2], model: 'kit_pillar' },
+      { type: 'deco', id: 'd8', at: [6, 2], model: 'kit_pipe' },
+      { type: 'deco', id: 'd9', at: [5, 1], model: 'deco_ivy' },
+    ],
+  };
+}
+
+const gl = document.getElementById('gl');
+let last = performance.now();
+
+if (!modelsMode) {
+  const state = makeState();
+  const view = createRoomView(r3, state);
+  r3.setView(view.scene, view.camera);
+  const crowLoop = [[1, 5], [2, 5], [2, 6], [1, 6]];
+  const mechPath = [[3, 5], [4, 5], [5, 5], [4, 5]];
+  let t = 0, crowStep = -1, mechStep = -1;
+  const ent = (id) => state.ents.find((e) => e.id === id);
+
+  // click: report the picked tile
+  gl.addEventListener('pointerdown', (ev) => {
+    const hit = r3.pick(ev.clientX, ev.clientY, view.tileMeshes);
+    if (hit && hit.object.userData.tiles && hit.instanceId !== undefined) info.textContent += '\npicked tile ' + hit.object.userData.tiles[hit.instanceId];
+  });
+
+  function frame(now) {
+    const dt = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    t += dt;
+    const cs = Math.floor(t / 1.0);
+    if (cs !== crowStep) {
+      crowStep = cs;
+      const p = crowLoop[cs % crowLoop.length];
+      if (!state.crow.inMech) { state.crow.x = p[0]; state.crow.z = p[1]; }
+      state.crow.carry = (cs % 8) < 3 ? 'S1' : null;
+    }
+    const ms = Math.floor(t / 0.7);
+    if (ms !== mechStep) {
+      mechStep = ms;
+      const p = mechPath[ms % mechPath.length];
+      const dx = p[0] - state.mech.x;
+      if (dx) state.mech.dir = dx > 0 ? 'E' : 'W';
+      state.mech.x = p[0]; state.mech.z = p[1];
+      view.handleEvents([{ type: 'move', who: 'mech', from: [p[0] - dx, p[1]], to: p }]);
+    }
+    state.crow.inMech = (t % 16) > 12;
+    if (state.crow.inMech) { state.crow.x = state.mech.x; state.crow.z = state.mech.z; }
+    ent('P1').on = (t % 8) > 4;
+    ent('C1').jammed = (t % 12) > 6;
+    ent('PI1').slammed = Math.floor(t * 2) % 4 === 0;
+    ent('SH').at = [6, 1];
+    view.sync(state, dt);
+    r3.render(dt);
+    info.textContent = 'test-render  quality=' + r3.quality + '  (click a tile to pick)\nwhite door opens with plate (4s cycle), cog jams (12s), crow sits in mech at t%16>12';
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+} else {
+  // ---- model gallery
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0f1416);
+  scene.add(new THREE.HemisphereLight(0x7fb7c4, 0x6b3a28, 1.3));
+  const sun = new THREE.DirectionalLight(0xffd2a0, 2.6);
+  sun.position.set(14, 22, 4);
+  sun.target.position.set(7, 0, 7);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, { left: -16, right: 16, top: 16, bottom: -16, near: 1, far: 70 });
+  scene.add(sun, sun.target);
+  const cols = 6;
+  const sp = 2.6;
+  const rows = Math.ceil(MODEL_NAMES.length / cols);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(cols * sp + 4, rows * sp + 4).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x3a4244 }));
+  ground.position.set((cols * sp) / 2, -0.01, (rows * sp) / 2);
+  ground.receiveShadow = true;
+  scene.add(ground);
+  const items = [];
+  const labels = [];
+  MODEL_NAMES.forEach((name, i) => {
+    const m = getModel(name);
+    const x = (i % cols) * sp + sp / 2, z = Math.floor(i / cols) * sp + sp / 2;
+    const holder = new THREE.Group();
+    holder.position.set(x, 0, z);
+    holder.add(m);
+    scene.add(holder);
+    items.push(holder);
+    const l = document.createElement('div');
+    l.className = 'lbl';
+    l.textContent = name + (isGLB(name) ? ' [glb]' : '');
+    document.body.appendChild(l);
+    labels.push({ l, pos: new THREE.Vector3(x, -0.05, z + 0.9) });
+  });
+  const cam = r3.makeIsoCamera(14);
+  r3.fitIso(cam, new THREE.Vector3((cols * sp) / 2, 0, (rows * sp) / 2), cols * sp, rows * sp, 2);
+  r3.setView(scene, cam);
+  const v = new THREE.Vector3();
+  let t = 0;
+  function frame(now) {
+    const dt = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    t += dt;
+    items.forEach((h) => { h.rotation.y = t * 0.5; });
+    // wiggle named animated parts so the fallbacks can be eyeballed
+    scene.traverse((o) => {
+      if (o.name === 'wing_L') o.rotation.z = Math.sin(t * 12) * 0.7;
+      if (o.name === 'wing_R') o.rotation.z = -Math.sin(t * 12) * 0.7;
+      if (o.name === 'leg_L') o.rotation.x = Math.sin(t * 6) * 0.5;
+      if (o.name === 'leg_R') o.rotation.x = -Math.sin(t * 6) * 0.5;
+      if (o.name === 'cog_wheel') o.rotation.z = t;
+      if (o.name === 'shiny_spin') o.rotation.y = t;
+    });
+    r3.render(dt);
+    const w = gl.clientWidth, h = gl.clientHeight;
+    for (const { l, pos } of labels) {
+      v.copy(pos).project(cam);
+      l.style.left = (v.x * 0.5 + 0.5) * w + 'px';
+      l.style.top = (-v.y * 0.5 + 0.5) * h + 'px';
+    }
+    info.textContent = 'model gallery (?models)  quality=' + r3.quality;
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+</script>
+</body>
+</html>

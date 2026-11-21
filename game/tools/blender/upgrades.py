@@ -1,0 +1,30 @@
+# upg_magnet_arm.glb (origin = mech arm socket, hangs outward along -X), upg_hydraulic_legs.glb (origin = leg_mod_socket on hips).
+reset()
+S = mat("steel", "steel", rough=0.5, metal=0.7); HZ = mat("hazard", "hazard", rough=0.6)
+M = mat("magnet_emit", "cyan", emit=3.0); RD = mat("rust_dark", "rustd", metal=0.2)
+root = empty("upg_magnet_arm")
+sh = pivot("arm_shoulder", (0, 0, 0), root)
+cyl("arm_joint", 0.07, 0.12, (-0.04, 0, 0), S, sh, rot=(0, math.pi / 2, 0))
+box("arm_upper", (0.1, 0.1, 0.3), (-0.08, 0, -0.14), HZ, sh, bevel=0.015)
+el = pivot("arm_elbow", (-0.08, 0, -0.29), sh)
+cyl("elbow_joint", 0.055, 0.12, (0, 0, 0), S, el, rot=(0, math.pi / 2, 0))
+box("arm_fore", (0.08, 0.26, 0.08), (0, -0.13, 0), RD, el, bevel=0.012)
+cyl("magnet_body", 0.11, 0.06, (0, -0.28, 0), S, el, rot=(math.pi / 2, 0, 0), verts=12)
+cyl("magnet_emit", 0.085, 0.02, (0, -0.315, 0), M, el, rot=(math.pi / 2, 0, 0), verts=12)
+anim("grab", (1, 18), [(sh, "rotation_euler", [(1, (0, 0, 0)), (9, (0.5, 0, 0)), (18, (0.35, 0, 0))]),
+                       (el, "rotation_euler", [(1, (0, 0, 0)), (9, (-0.6, 0, 0)), (18, (-0.3, 0, 0))])])
+anim("idle", (1, 48), [(el, "rotation_euler", [(1, (0, 0, 0)), (24, (0.06, 0, 0)), (48, (0, 0, 0))])])
+r1 = export("upg_magnet_arm")
+
+reset()
+S = mat("steel", "steel", rough=0.5, metal=0.7); HZ = mat("hazard", "hazard", rough=0.6)
+G = mat("hydraulic_emit", (0x7c, 0xff, 0x9a), emit=2.0); RD = mat("rust_dark", "rustd", metal=0.2)
+root = empty("upg_hydraulic_legs")
+box("hip_bracket", (0.66, 0.16, 0.08), (0, 0.1, 0), RD, root, bevel=0.015)
+for side, x in (("L", 0.33), ("R", -0.33)):
+    cyl(f"cyl_{side}", 0.045, 0.3, (x, 0.08, -0.17), HZ, root, verts=8)
+    cyl(f"rod_{side}", 0.022, 0.22, (x, 0.08, -0.38), S, root, verts=6)
+    box(f"spring_glow_{side}", (0.06, 0.06, 0.04), (x, 0.08, -0.06), G, root)
+    box(f"foot_plate_{side}", (0.14, 0.2, 0.04), (x * 0.75, 0.0, -0.5), S, root, bevel=0.01)
+r2 = export("upg_hydraulic_legs")
+result = [r1, r2]

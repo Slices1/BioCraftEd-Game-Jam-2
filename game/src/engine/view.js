@@ -95,11 +95,15 @@ export function createView(canvas, opts = {}) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = view.mode === 'fit' ? view.letterbox : view.background;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      const clear = view.background === 'transparent';
+      if (clear) ctx.clearRect(0, 0, canvas.width, canvas.height);
+      else {
+        ctx.fillStyle = view.mode === 'fit' ? view.letterbox : view.background;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
       const k = view.dpr * view.scale;
       ctx.setTransform(k, 0, 0, k, view.offsetX * view.dpr, view.offsetY * view.dpr);
-      if (view.mode === 'fit') { ctx.fillStyle = view.background; ctx.fillRect(0, 0, view.w, view.h); }
+      if (view.mode === 'fit' && !clear) { ctx.fillStyle = view.background; ctx.fillRect(0, 0, view.w, view.h); }
       ctx.imageSmoothingEnabled = !view.pixelated;
     },
 

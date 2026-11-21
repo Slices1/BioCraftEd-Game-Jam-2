@@ -13,11 +13,13 @@ import { storage, highscore } from './engine/storage.js';
 import { text } from './engine/ui.js';
 import { titleScene } from './scenes/title.js';
 import { playScene } from './scenes/play.js';
-import { gameoverScene } from './scenes/gameover.js';
 import { introScene } from './scenes/intro.js';
 import { endingScene } from './scenes/ending.js';
 import { registerSynthSfx } from './audio/sfxr.js';
 import { initSoundtrack } from './game/soundtrack.js';
+import { createR3 } from './render/r3.js';
+import { loadAssets } from './render/assets.js';
+import { createVoice } from './story/voice.js';
 
 export const CONFIG = {
   id: 'corvid',                 // localStorage namespace: change per game
@@ -53,12 +55,13 @@ function setupAudio(audio) {
       }).catch((e) => { console.warn('[audio] index load failed', e); });
   } catch (e) { /* ignore */ }
   initSoundtrack(audio, p);
+  return p;
 }
 
 function bindDefaults(input) {
   input.bind('action', { keys: ['Space', 'KeyJ', 'KeyZ', 'KeyX'], touch: 'buttonA', mouse: 0, pad: [0, 2] });
   // CORVID gameplay actions
-  input.bind('act', { keys: ['KeyE', 'Enter', 'NumpadEnter', 'KeyJ'], touch: 'buttonA', mouse: 0, pad: [0] });
+  input.bind('act', { keys: ['KeyE', 'Enter', 'NumpadEnter', 'KeyJ'], touch: 'buttonA', pad: [0] }); // no mouse: clicks move
   input.bind('swap', { keys: ['KeyQ', 'ShiftLeft', 'ShiftRight', 'KeyK'], touch: 'buttonB', pad: [1] });
   input.bind('reset', { keys: ['KeyR'], touch: 'buttonR', pad: [3] });
   input.bind('debugNext', { keys: ['BracketRight'] });
@@ -76,8 +79,9 @@ const params = new URLSearchParams(location.search);
 storage.setPrefix(CONFIG.id + ':');
 
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d', { alpha: false }) || canvas.getContext('2d');
-const view = createView(canvas, { ...CONFIG.design, background: CONFIG.background });
+const glCanvas = document.getElementById('gl');
+const ctx = canvas.getContext('2d', { alpha: true }) || canvas.getContext('2d');
+const view = createView(canvas, { ...CONFIG.design, background: 'transparent' });
 if (params.has('touch')) view.isTouch = true;
 const input = createInput(canvas, view);
 const audio = createAudio();
@@ -91,10 +95,24 @@ const game = {
   debug: params.has('debug'),
   state: {}, // free-form shared state for game modules
 };
+game.glCanvas = glCanvas;
+game.r3 = null;
+let hasView = false; // true once the current scene called r3.setView(scene, camera)
+try {
+  const r3 = createR3(glCanvas, { isTouch: !!view.isTouch });
+  const rawSetView = r3.setView.bind(r3);
+  r3.setView = (s, c) => { hasView = !!(s && c); glCanvas.style.visibility = hasView ? 'visible' : 'hidden'; return rawSetView(s, c); };
+  game.r3 = r3;
+} catch (e) { console.error('[main] WebGL init failed', e); }
+glCanvas.style.visibility = 'hidden';
+game.voice = createVoice(game);
 game.loop = createLoop({ update, render });
 game.fx = createJuice({ view, loop: game.loop });
 game.scenes = createScenes(game, {
-  onSwitch(scene) { game.fx.reset(); input.setTouchControls(scene.touch || null); },
+  onSwitch(scene) {
+    hasView = false; glCanvas.style.visibility = 'hidden'; // a scene that wants 3D calls r3.setView in enter()
+    game.fx.reset(); input.setTouchControls(scene.touch || null);
+  },
 });
 game.pause = createPause(game, { menuScene: CONFIG.menuScene });
 game.loop.onAutoPause = () => game.pause.open();
@@ -105,14 +123,23 @@ function update(dt) {
   if (input.pressed('pause')) game.pause.toggle();
   if (game.pause.active) { game.pause.update(game.loop.step); return; }
   game.scenes.update(dt, game.loop.step);
+  game.voice.update(dt);
   game.fx.update(dt);
 }
 
+let lastFrame = 0, glWarned = false;
 function render() {
   view.check();
+  const now = performance.now();
+  const frameDt = lastFrame ? Math.min(0.1, (now - lastFrame) / 1000) : 1 / 60;
+  lastFrame = now;
+  if (game.r3 && hasView) {
+    try { game.r3.render(frameDt); } catch (e) { if (!glWarned) { glWarned = true; console.error('[main] r3.render failed', e); } }
+  }
   view.begin(ctx);
   ctx.save();
   game.scenes.render(ctx);
+  game.voice.drawSubtitles(ctx, view);
   ctx.restore();
   game.fx.drawScreen(ctx);
   if (!game.pause.active) input.renderTouch(ctx);
@@ -210,8 +237,15 @@ for (const t of ['gesturestart', 'gesturechange', 'gestureend']) document.addEve
 
 // ---- Boot ----------------------------------------------------------------------------------
 async function boot() {
-  game.scenes.add('title', titleScene).add('play', playScene).add('gameover', gameoverScene).add('intro', introScene).add('ending', endingScene);
-  try { setupAudio(audio); } catch (e) { console.error('[main] setupAudio failed', e); }
+  game.scenes.add('title', titleScene).add('play', playScene).add('intro', introScene).add('ending', endingScene);
+  let audioReady = Promise.resolve();
+  try { audioReady = setupAudio(audio) || audioReady; } catch (e) { console.error('[main] setupAudio failed', e); }
+  audioReady.then(() => game.voice.preload()).catch(() => {});
+  // 3D assets (GLB with procedural fallbacks) before the first scene; never fail or block boot for long.
+  try {
+    await Promise.race([Promise.resolve().then(() => loadAssets()).catch((e) => console.warn('[main] loadAssets failed', e)),
+      new Promise((r) => setTimeout(r, 5000))]);
+  } catch (e) { console.warn('[main] loadAssets failed', e); }
   const want = params.get('scene');
   game.scenes.go(want && game.scenes.has(want) ? want : CONFIG.firstScene, {}, { fade: params.has('autostart') ? 0 : 0.6 });
   game.loop.start();

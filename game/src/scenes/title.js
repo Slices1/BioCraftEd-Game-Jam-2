@@ -1,71 +1,139 @@
-// CORVID title: dark factory silhouette in the rain, a glowing window, a crow crossing the sky, canvas-drawn logo.
-// Start -> intro cutscene -> play. Continue (if a save exists) -> play from the saved room.
-import { Button, Menu, text } from '../engine/ui.js';
-import { sprites } from '../game/sprites.js';
+// CORVID title: a slumped mech in a lamp-lit corner (3D, slow orbit) under the logo text.
+// First visit -> 'intro' cutscene, afterwards straight to 'play'.
+import * as THREE from 'three';
+import { getModel, getClips } from '../render/assets.js';
+import { text } from '../engine/ui.js';
 import { playMenu } from '../game/soundtrack.js';
-import { W, H, framePanel, sky, skyline, tower, glint, rain, crow, drawLogo, vignette } from './storyart.js';
 
 export function titleScene(game) {
   const { view, input, audio, scenes, storage } = game;
-  let t = 0, flash = 0, nextFlash = 5, started = false;
-  const save = storage.get('save', null);
-  const hasSave = !!(save && save.snap);
-  const go = (name, params) => { if (started) return; started = true; audio.play('ui_confirm'); scenes.go(name, params, { fade: 0.6 }); };
-  const buttons = [new Button({ label: 'START', color: '#b8122e', onClick: () => { storage.remove('save'); go('intro'); } })];
-  if (hasSave) buttons.push(new Button({ label: 'CONTINUE', color: '#2a3140', onClick: () => go('play', { cont: save }) }));
-  const menu = new Menu(buttons);
+  const r3 = game.r3;
+  let t = 0, started = false;
+  let scene3d = null, camera = null, lampLight = null;
+  const mixers = [];
+  const target = new THREE.Vector3(0, 0.85, 0);
+  let aspectW = -1, aspectH = -1;
 
-  function backdrop(ctx) {
-    const img = sprites.get('cutscene_rooftop');
-    ctx.save();
-    if (img) {
-      const s = Math.max(view.w / img.width, view.h / img.height);
-      ctx.drawImage(img, (view.w - img.width * s) / 2, (view.h - img.height * s) / 2, img.width * s, img.height * s);
-      ctx.restore(); return;
+  function place(name, x, y, z, rotY = 0, scale = 1) {
+    let m = null;
+    try { m = getModel(name); } catch (e) { m = null; }
+    if (!m) return null;
+    m.position.set(x, y, z);
+    m.rotation.y = rotY;
+    m.scale.setScalar(scale);
+    scene3d.add(m);
+    return m;
+  }
+
+  function play(model, name, clipNames) {
+    if (!model) return;
+    try {
+      const clips = getClips(name) || [];
+      const clip = clips.find((c) => clipNames.includes(c.name)) || null;
+      if (!clip) return;
+      const mixer = new THREE.AnimationMixer(model);
+      mixer.clipAction(clip).play();
+      mixers.push(mixer);
+    } catch (e) { /* animations are optional */ }
+  }
+
+  function build() {
+    scene3d = new THREE.Scene();
+    scene3d.background = new THREE.Color(0x0f1416);
+    scene3d.fog = new THREE.Fog(0x0f1416, 9, 22);
+    scene3d.add(new THREE.HemisphereLight(0x6fa6a8, 0x4a2a20, 0.9));
+    const moon = new THREE.DirectionalLight(0x8fb6c8, 0.5);
+    moon.position.set(5, 8, 6);
+    scene3d.add(moon);
+    lampLight = new THREE.PointLight(0xffb35a, 55, 16, 2);
+    lampLight.position.set(-1.4, 2.2, -2.2);
+    scene3d.add(lampLight);
+    const fill = new THREE.PointLight(0x3ff0ff, 4, 6, 2); // faint cyan from the dormant core
+    fill.position.set(0, 1.2, 0.6);
+    scene3d.add(fill);
+
+    // floor + two back walls (west and north), so the corner is lit and readable
+    for (let x = -3; x <= 3; x++) for (let z = -3; z <= 3; z++) {
+      const kind = (x * 7 + z * 3) % 5 === 0 ? 'kit_floor_moss' : (x + z) % 4 === 0 ? 'kit_floor_grate' : 'kit_floor';
+      place(kind, x, 0, z);
     }
-    const sc = framePanel(ctx, view, 1000 + Math.sin(t * 0.15) * 40, 520, 1);
-    if (view.h > view.w) ctx.translate(0, view.h * 0.1 / sc); // portrait: drop the tower so its window sits below the logo
-    sky(ctx, '#05060b', '#111522', '#241624');
-    skyline(ctx, 800, 11, { color: '#0b0e16', lit: 0.1, minH: 100, maxH: 330 });
-    skyline(ctx, 880, 12, { color: '#07090e', lit: 0.16, minH: 80, maxH: 220, win: 'rgba(255,160,70,0.6)' });
-    const pulse = 0.5 + 0.5 * Math.sin(t * 1.4);
-    const win = tower(ctx, 1020, 900, t, { pulse });
-    glint(ctx, win.x, win.y, 70 + pulse * 30, 0.55 + 0.4 * Math.sin(t * 2.3), t);
-    // crow crossing the sky every ~11 s
-    const k = (t % 11) / 11;
-    if (k < 0.5) {
-      const p = k / 0.5, cx = -100 + p * (W + 200), cy = 260 + Math.sin(p * 6) * 24 - p * 60;
-      crow(ctx, cx, cy, 1.15, { flap: Math.sin(t * 14), lean: -0.05 });
+    for (let i = -3; i <= 3; i++) {
+      place('kit_wall', -4, 0, i, Math.PI / 2);
+      place('kit_wall', i, 0, -4, 0);
     }
-    ctx.restore();
+    place('kit_pillar', -3.6, 0, -3.6);
+    place('deco_lamp', -1.4, 0, -2.8);
+    place('deco_tree', -3, 0, 0.8, 0.6);
+    place('deco_barrel', 2.4, 0, -2.6, 0.4);
+    place('deco_barrel', 3, 0, -1.6, 1.1);
+    place('deco_terminal', -2.9, 0, -1.6, Math.PI / 2);
+    place('deco_mushrooms', 1.6, 0, -3, 0.3);
+    place('deco_moss', 2.6, 0, 2.2, 0.8);
+
+    const mech = place('mech', 0, 0, 0, Math.PI / 4);
+    if (mech) { mech.rotation.x = 0.12; play(mech, 'mech', ['off', 'idle']); } // slumped, dormant
+    const crow = place('crow', 2.4, 0.78, -2.6, -Math.PI / 4);
+    play(crow, 'crow', ['idle']);
+
+    camera = new THREE.PerspectiveCamera(32, 1, 0.1, 60);
+    updateCamera(0);
+    r3.setView(scene3d, camera);
+  }
+
+  function updateCamera() {
+    if (!camera) return;
+    if (view.cssW !== aspectW || view.cssH !== aspectH) {
+      aspectW = view.cssW; aspectH = view.cssH;
+      camera.aspect = view.cssW / Math.max(1, view.cssH);
+      camera.updateProjectionMatrix();
+    }
+    const ang = Math.PI / 4 + Math.sin(t * 0.13) * 0.5;
+    const dist = view.isPortrait ? 14.5 : 10.5;
+    camera.position.set(target.x + Math.sin(ang) * dist, 4.2 + Math.sin(t * 0.21) * 0.3, target.z + Math.cos(ang) * dist);
+    camera.lookAt(target.x, target.y + (view.isPortrait ? 0.2 : 0), target.z);
+  }
+
+  function go() {
+    if (started) return;
+    started = true;
+    try { audio.play('ui_confirm'); } catch (e) { /* ignore */ }
+    let seen = false;
+    try { seen = !!storage.get('introSeen', false); } catch (e) { seen = false; }
+    try { storage.set('introSeen', true); } catch (e) { /* ignore */ }
+    game.state.carry = null;
+    scenes.go(seen ? 'play' : 'intro', {}, { fade: 0.6 });
   }
 
   return {
-    enter() { try { playMenu(); } catch (e) { /* audio optional */ } },
+    enter() {
+      try { playMenu(); } catch (e) { /* audio optional */ }
+      if (r3) { try { build(); } catch (e) { console.error('[title] 3D build failed', e); } }
+    },
+    exit() { mixers.length = 0; scene3d = null; },
     update(dt) {
-      t += dt; nextFlash -= dt;
-      if (nextFlash < 0) { flash = 1; nextFlash = 4 + Math.random() * 6; }
-      flash = Math.max(0, flash - dt * 3);
-      menu.layout(view, { bh: 96, gap: 20 });
-      const c = menu.update(input, dt);
-      const tap = input.tap;
-      if (!c && tap && !started && !buttons.some((b) => b.contains(tap.x, tap.y, 10))) buttons[0].activate();
+      t += dt;
+      for (const m of mixers) m.update(dt);
+      if (lampLight) lampLight.intensity = 55 + Math.sin(t * 7.3) * 4 + Math.sin(t * 17.1) * 3;
+      updateCamera();
+      if (started || t < 0.35) return;
+      if (input.taps.length || input.downs.length || input.pressed('confirm') || input.pressed('action') || input.pressed('act')) go();
     },
     render(ctx) {
-      const L = menu.layout(view, { bh: 96, gap: 20 });
-      ctx.fillStyle = '#05060b'; ctx.fillRect(0, 0, view.w, view.h);
-      backdrop(ctx);
-      rain(ctx, view, t, 1);
-      if (flash > 0) { ctx.fillStyle = `rgba(190,210,255,${flash * 0.12})`; ctx.fillRect(0, 0, view.w, view.h); }
-      vignette(ctx, view, 0.65);
-      const lw = Math.min(view.w * 0.9, view.h * 0.9, 760);
-      const logo = sprites.get('title_logo');
-      if (logo) { const h = lw * logo.height / logo.width; ctx.drawImage(logo, view.w / 2 - lw / 2, L.title.y - h / 2, lw, h); }
-      else drawLogo(ctx, view.w / 2, L.title.y, lw * 0.82, t);
-      text(ctx, 'a symbiosis heist', view.w / 2, L.title.y + lw * 0.2, { size: Math.max(24, lw * 0.05), color: '#e9c9cf', outline: 4, weight: 500, family: 'Georgia, serif' });
-      menu.draw(ctx);
-      const hint = view.isTouch ? 'tap START' : 'Enter / click to start';
-      text(ctx, hint, view.w / 2, L.footerY, { size: 20, color: 'rgba(255,255,255,0.45)', outline: 3 });
+      if (!scene3d) { ctx.fillStyle = '#0f1416'; ctx.fillRect(0, 0, view.w, view.h); }
+      // soft top / bottom shading so the text reads over the 3D scene
+      const g = ctx.createLinearGradient(0, 0, 0, view.h);
+      g.addColorStop(0, 'rgba(8,10,12,0.65)'); g.addColorStop(0.35, 'rgba(8,10,12,0)');
+      g.addColorStop(0.75, 'rgba(8,10,12,0)'); g.addColorStop(1, 'rgba(8,10,12,0.6)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, view.w, view.h);
+
+      const cx = view.w / 2;
+      const size = Math.min(view.w * 0.2, view.h * 0.2, 190);
+      const y = view.safe.top + (view.isPortrait ? view.h * 0.17 : view.h * 0.2);
+      text(ctx, 'CORVID', cx, y, { size, color: '#ffcc44', outline: size * 0.07, outlineColor: '#2a1710', weight: 900, shadow: size * 0.05, maxWidth: view.w - 40 });
+      text(ctx, 'A crow. A machine. Symbiosis.', cx, y + size * 0.72, { size: Math.max(22, size * 0.17), color: '#e9dcc4', outline: 4, weight: 500, maxWidth: view.w - 40 });
+      const pulse = 0.55 + 0.45 * Math.sin(t * 3);
+      text(ctx, view.isTouch ? 'Tap to play' : 'Click or press any key to play', cx, view.h - view.safe.bottom - Math.max(90, view.h * 0.12),
+        { size: 34, color: '#fff3dc', outline: 5, alpha: pulse, maxWidth: view.w - 40 });
     },
   };
 }

@@ -1,119 +1,197 @@
-// CORVID ending: the crow lifts the Shiny out of the tower window, the factory lights pulse (174 BPM), flight over the city at dawn,
-// credits card with time taken and a restart button. params: {time, deaths}. Debug: ?t=<seconds> jumps the timeline.
-import { Button, Menu, text } from '../engine/ui.js';
-import { playMenu } from '../game/soundtrack.js';
-import { sprites } from '../game/sprites.js';
-import { W, H, framePanel, sky, skyline, tower, glint, rain, crow, drawLogo, caption, vignette, seg, smooth, lerp, fmtTime } from './storyart.js';
+// CORVID ending (~20 s + credits): the crow carries the Great Shiny out of the gold window while the tower lights pulse
+// on the 174 BPM drum & bass, cut to dawn on the roof: crow on the upgraded mech's seat, shiny hovering. Credits, then tap -> title.
+import * as THREE from 'three';
+import { getModel } from '../render/assets.js';
+import { text } from '../engine/ui.js';
+import {
+  track, timeline, disposer, buildTowerWorld, TOWER, createCrowRig, createMech, fitPerspective,
+  letterbox, anyTap, onKeys, dip, seg, smooth, lerp, ease,
+} from './cutscene.js';
 
-const mix = (a, b, k) => `rgb(${a.map((v, i) => Math.round(lerp(v, b[i], k))).join(',')})`;
+const CUT = 9;          // night exterior -> dawn roof
+const CREDITS = 15.5;   // credits fade in
+const AGAIN = 18.5;     // "tap to play again" allowed
+const BPM = 174;
+const _p = new THREE.Vector3(), _q = new THREE.Vector3(), _look = new THREE.Vector3(), _seat = new THREE.Vector3(), _c = new THREE.Vector3();
 
 export function endingScene(game) {
-  const { view, input, audio, scenes, storage } = game;
-  let t = 0, time = 0, deaths = 0, started = false;
-  const go = (name, params) => { if (started) return; started = true; audio.play('ui_confirm'); scenes.go(name, params, { fade: 0.7 }); };
-  const menu = new Menu([
-    new Button({ label: 'RESTART', color: '#b8122e', onClick: () => { storage.remove('save'); go('title'); } }),
-  ]);
+  const { view, audio, scenes } = game;
+  const D = disposer();
+  const tl = timeline();
+  let t = 0, done = false, stopKeys = null;
+  let world = null, cam = null, camTrack = null, crow = null, mech = null, shiny = null;
+  let curveA = null, curveB = null;
 
-  // ref-space path of the crow: window (1020,260) -> out over the city -> far toward the sunrise
-  function crowPos(tt) {
-    if (tt < 4.5) { const p = smooth(seg(tt, 1.5, 4.5)); return { x: 1000 - 90 * (1 - p) + p * 20, y: 520 - p * 60 - Math.sin(p * Math.PI) * 30, s: 1.6, sh: true }; }
-    const p = seg(tt, 4.5, 15);
-    return { x: lerp(1060, 1500, smooth(p)), y: lerp(430, 360, p) + Math.sin(tt * 1.8) * 14, s: lerp(1.4, 0.55, smooth(p)), sh: true };
+  function say(id) { try { if (game.voice) game.voice.say(id); } catch (e) { /* ignore */ } }
+  function again() { if (done) return; done = true; scenes.go('title', {}, { fade: 0.6 }); }
+  function press() {
+    if (t < 0.45) return;
+    if (t >= AGAIN) again();
+    else if (t < CREDITS - 0.5) t = CREDITS - 0.5; // skip ahead to the credits
   }
 
-  function render(ctx) {
-    const beat = t * 174 / 60, pulse = 1 - (beat % 1);
-    const night = 1 - smooth(seg(t, 5, 11)); // 1 = night, 0 = dawn
-    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, view.w, view.h);
-    ctx.save();
-    const cp = crowPos(t);
-    if (t < 4.5) {
-      // INTERIOR: dark hall, window arch, wall lights pulsing on the beat; crow lifts the Shiny
-      framePanel(ctx, view, 800, 520, 1);
-      sky(ctx, '#05070b', '#0a0d14', '#12161e');
-      ctx.fillStyle = '#0d1118';
-      for (let i = 0; i < 9; i++) ctx.fillRect(i * 200 - 60, 0, 36, 1000);
-      for (let i = 0; i < 9; i++) {
-        const on = (Math.floor(beat) + i) % 3 === 0 ? pulse : 0.12;
-        ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = i % 2 ? `rgba(255,47,77,${0.2 + 0.7 * on})` : `rgba(79,243,255,${0.2 + 0.7 * on})`;
-        ctx.shadowColor = i % 2 ? '#ff2f4d' : '#4ff3ff'; ctx.shadowBlur = 24 * on; ctx.fillRect(i * 200 - 54, 120, 24, 760); ctx.restore();
-      }
-      // window arch with the city beyond
-      ctx.save(); ctx.beginPath(); ctx.moveTo(520, 900); ctx.lineTo(520, 380); ctx.quadraticCurveTo(800, 80, 1080, 380); ctx.lineTo(1080, 900); ctx.closePath(); ctx.clip();
-      sky(ctx, '#0a0c16', '#1b1626', '#3a2230', 100, 900); skyline(ctx, 880, 12, { color: '#07090e', lit: 0.2, minH: 80, maxH: 220 });
-      ctx.restore();
-      ctx.strokeStyle = '#1c222c'; ctx.lineWidth = 12; ctx.beginPath(); ctx.moveTo(520, 900); ctx.lineTo(520, 380); ctx.quadraticCurveTo(800, 80, 1080, 380); ctx.lineTo(1080, 900); ctx.stroke();
-      ctx.fillStyle = '#0a0d12'; ctx.fillRect(480, 880, 640, 40);
-      // shiny rises with the crow
-      const p = smooth(seg(t, 1.2, 4.2)), sx = 800 + p * 20, sy = 860 - p * 380;
-      glint(ctx, sx, sy + 40, 90 + pulse * 40, 0.9, t);
-      crow(ctx, sx, sy - 6, 2.3, { flap: p > 0.05 ? Math.sin(t * 16) : 0, perch: p < 0.05, flip: false, lean: -0.1 });
-      ctx.fillStyle = `rgba(255,255,255,${0.12 * pulse})`; ctx.fillRect(0, 0, W, H);
-    } else {
-      // EXTERIOR: night -> dawn, tower behind with pulsing lights, crow carrying the glint over the city
-      const pan = seg(t, 4.5, 15);
-      framePanel(ctx, view, lerp(900, 1150, smooth(pan)), lerp(520, 470, smooth(pan)), lerp(1.3, 1.0, smooth(pan)));
-      const top = mix([5, 6, 11], [58, 74, 120], 1 - night), mid = mix([16, 19, 31], [190, 110, 110], 1 - night), bot = mix([42, 24, 38], [255, 176, 96], 1 - night);
-      sky(ctx, top, mid, bot);
-      // sun
-      const sunY = lerp(1000, 760, 1 - night);
-      const sg = ctx.createRadialGradient(1300, sunY, 10, 1300, sunY, 520);
-      sg.addColorStop(0, `rgba(255,220,150,${0.9 * (1 - night)})`); sg.addColorStop(1, 'rgba(255,160,90,0)');
-      ctx.fillStyle = sg; ctx.fillRect(0, 0, W, H);
-      skyline(ctx, 800, 11, { color: mix([11, 14, 22], [40, 36, 58], 1 - night), lit: 0.1 * night + 0.02, minH: 100, maxH: 330 });
-      skyline(ctx, 880, 12, { color: mix([7, 9, 14], [24, 22, 36], 1 - night), lit: 0.16 * night + 0.02, minH: 80, maxH: 220 });
-      // tower: lights pulse on the beat for a few seconds, then settle
-      const throb = 1 - seg(t, 8, 12);
-      const win = tower(ctx, 520, 900, t, { pulse: pulse * throb, dim: night });
-      ctx.save(); ctx.globalCompositeOperation = 'lighter';
-      for (let i = 0; i < 6; i++) {
-        const on = ((Math.floor(beat) + i) % 3 === 0 ? pulse : 0.1) * throb;
-        ctx.fillStyle = `rgba(255,47,77,${0.6 * on})`; ctx.shadowColor = '#ff2f4d'; ctx.shadowBlur = 20 * on; ctx.fillRect(400 + i * 48, 560 + (i % 2) * 90, 22, 8);
-      }
-      ctx.restore();
-      glint(ctx, cp.x, cp.y + 26 * cp.s, 40 * cp.s + pulse * 10, 0.9, t);
-      crow(ctx, cp.x, cp.y, cp.s, { flap: Math.sin(t * 15), lean: -0.12, flip: false });
-    }
-    ctx.restore();
-    if (night > 0.2) rain(ctx, view, t, 0.5 * night);
-    vignette(ctx, view, 0.55);
-    // intro fade
-    if (t < 0.5) { ctx.fillStyle = `rgba(0,0,0,${1 - t / 0.5})`; ctx.fillRect(0, 0, view.w, view.h); }
-    if (t > 4.2 && t < 4.7) { ctx.fillStyle = `rgba(255,244,176,${1 - Math.abs(t - 4.45) / 0.25})`; ctx.fillRect(0, 0, view.w, view.h); }
+  function beatPulse() {
+    let ct = t;
+    try {
+      const mt = typeof audio.musicTime === 'function' ? audio.musicTime() : audio.musicTime;
+      if (typeof mt === 'number' && mt > 0) ct = mt;
+    } catch (e) { /* ignore */ }
+    const ph = (ct * BPM / 60) % 1;
+    return Math.exp(-ph * 4);
+  }
 
-    // captions + credits card
-    if (t > 2.2 && t < 4.4) caption(ctx, view, 'The suit stayed behind. It did not mind. It is a suit.', Math.min(seg(t, 2.2, 3), 1 - seg(t, 4.0, 4.4)));
-    const card = smooth(seg(t, 10.5, 12));
-    if (card > 0) {
-      ctx.fillStyle = `rgba(4,5,10,${0.55 * card})`; ctx.fillRect(0, 0, view.w, view.h);
-      const L = menu.layout(view, { bh: 92 });
-      const lw = Math.min(view.w * 0.85, 640, view.h * 0.8);
-      ctx.save(); ctx.globalAlpha = card;
-      const logo = sprites.get('title_logo');
-      const ly = view.h * (view.h > view.w ? 0.26 : 0.24);
-      if (logo) { const h = lw * logo.height / logo.width; ctx.drawImage(logo, view.w / 2 - lw / 2, ly - h / 2, lw, h); } else drawLogo(ctx, view.w / 2, ly, lw * 0.8, t);
-      ctx.restore();
-      text(ctx, 'thanks for playing', view.w / 2, ly + lw * 0.2, { size: Math.max(28, lw * 0.06), color: '#f1e9dc', outline: 4, alpha: card, family: 'Georgia, serif', weight: 500 });
-      const a2 = smooth(seg(t, 11.8, 13));
-      text(ctx, `Time taken  ${fmtTime(time)}`, view.w / 2, ly + lw * 0.2 + 70, { size: 34, color: '#ffd9a0', outline: 4, alpha: a2 });
-      text(ctx, deaths ? `Crow lost to lasers and pistons: ${deaths}` : 'Not a single feather lost.', view.w / 2, ly + lw * 0.2 + 116, { size: 24, color: '#cfd6e6', outline: 4, alpha: a2 * 0.9 });
-      ctx.save(); ctx.globalAlpha = smooth(seg(t, 12.6, 13.6)); menu.draw(ctx); ctx.restore();
+  function update3D(dt) {
+    fitPerspective(cam, game.r3, 52);
+    const night = t < CUT;
+    const p = beatPulse();
+    world.dawn(smooth(seg(t, CUT, 13)));
+    world.setGold(night ? 1 - 0.55 * seg(t, 2.2, 4) : 0.2);
+    world.pulse(night ? p : p * 0.35);
+    world.update(dt, t);
+
+    // mech on the roof
+    mech.setCore(0.9 + 0.5 * (night ? 0 : p));
+    mech.anim.play('idle');
+    mech.anim.update(dt);
+    mech.root.updateMatrixWorld(true);
+    mech.seat.getWorldPosition(_seat);
+
+    // crow + shiny
+    const r = crow.root;
+    let mode = 'fly', vis = true, sc = 1.6, shSc = 1.2;
+    const off = _c;
+    if (t < 1.8) {
+      vis = false;
+      r.position.copy(curveA.getPoint(0));
+    } else if (t < CUT) {
+      const u = ease.inOut(seg(t, 1.8, 8.8));
+      curveA.getPoint(Math.min(u, 0.999), _p);
+      curveA.getPoint(Math.min(u + 0.01, 1), _q);
+      const dx = _q.x - _p.x, dy = _q.y - _p.y, dz = _q.z - _p.z;
+      r.position.copy(_p);
+      r.rotation.set(Math.atan2(-dy, Math.hypot(dx, dz)), Math.atan2(dx, dz), 0, 'YXZ');
+      off.set(0, -0.6, 0.1);
+    } else {
+      sc = 1.15; shSc = 0.8;
+      const u = ease.inOut(seg(t, CUT + 0.1, 11.6));
+      if (u < 1) {
+        curveB.getPoint(Math.min(u, 0.999), _p);
+        curveB.getPoint(Math.min(u + 0.01, 1), _q);
+        const dx = _q.x - _p.x, dy = _q.y - _p.y, dz = _q.z - _p.z;
+        const fin = seg(u, 0.9, 1);
+        _p.lerp(_seat, smooth(fin));
+        r.position.copy(_p);
+        r.rotation.set(lerp(Math.atan2(-dy, Math.hypot(dx, dz)), 0, fin), lerp(Math.atan2(dx, dz), mech.root.rotation.y, fin), 0, 'YXZ');
+      } else {
+        mode = 'idle';
+        r.position.copy(_seat);
+        r.rotation.set(0, mech.root.rotation.y + 0.1 * Math.sin(t * 1.3), 0, 'YXZ');
+      }
+      const hv = smooth(seg(t, 11.4, 12.8));
+      off.set(lerp(0, 0.62, hv), lerp(-0.5, 0.5, hv), lerp(0, 0.38, hv));
     }
+    r.visible = vis;
+    r.scale.setScalar(sc);
+    crow.update(dt, mode, t);
+    shiny.visible = vis;
+    shiny.scale.setScalar(shSc);
+    shiny.position.copy(r.position).add(off);
+    shiny.rotation.y = t * (t < CUT ? 2.4 : 1.2);
+
+    // camera
+    camTrack.sample(t, _p, _look);
+    if (!night) _p.x += 0.35 * Math.sin(t * 0.3);
+    cam.position.copy(_p);
+    cam.lookAt(_look);
+    world.sky.follow(cam);
   }
 
   return {
-    enter(p = {}) {
-      time = p.time ?? (game.state.world && game.state.world.time) ?? 0; deaths = p.deaths ?? (game.state.world && game.state.world.deaths) ?? 0;
-      const o = game.params && game.params.get && +game.params.get('t');
-      if (o) t = o;
-      try { playMenu(); } catch (e) { /* optional */ }
+    pausable: false,
+    enter() {
+      world = buildTowerWorld(D, { rain: false });
+      cam = new THREE.PerspectiveCamera(52, 1.6, 0.1, 700);
+      camTrack = track([
+        { t: 0, pos: [-3.5, 13.8, 12], look: [-1.2, 13.5, 3.8] },
+        { t: 4, pos: [-5, 14.5, 15], look: [-1.2, 14.5, 6] },
+        { t: 8.8, pos: [-4, 20, 14], look: [0, 22, 6] },
+        { t: 9.0, pos: [5.6, 24.5, 4.2], look: [-0.3, 24.0, 0] },
+        { t: 22, pos: [4.4, 24.7, 3.4], look: [-0.3, 24.1, 0.1] },
+      ], 'linear');
+      // roof: upgraded mech looking out over the city, crow on its seat
+      mech = createMech(D, { arm: true, legs: true });
+      mech.root.position.set(-0.5, TOWER.roofY, 0.3);
+      mech.root.rotation.y = Math.PI - 0.6;
+      world.scene.add(mech.root);
+      mech.root.updateMatrixWorld(true);
+      mech.seat.getWorldPosition(_seat);
+      crow = createCrowRig(1.6);
+      world.scene.add(crow.root);
+      shiny = getModel('great_shiny');
+      world.scene.add(shiny);
+      curveA = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-1.2, 13.6, 3.5), new THREE.Vector3(-1.2, 14.0, 6.0), new THREE.Vector3(-2.0, 15.5, 9.5),
+        new THREE.Vector3(0.5, 19.5, 9.0), new THREE.Vector3(3.5, 24.0, 6.5), new THREE.Vector3(5.2, 26.5, 5.0),
+      ]);
+      curveB = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(10, 28, 10), new THREE.Vector3(6, 26.4, 6.5), new THREE.Vector3(2.6, 25.4, 3.2),
+        _seat.clone().add(new THREE.Vector3(0, 0.15, 0)),
+      ]);
+
+      tl.at(1.5, () => say('vo_win1'));
+      tl.at(9.2, () => say('vo_win2'));
+      tl.at(CUT + 0.5, () => { try { audio.play('win'); } catch (e) { /* ignore */ } });
+      try { audio.music('dnb', { fade: 0.5 }); } catch (e) { /* ignore */ }
+      stopKeys = onKeys(press);
+      if (game.r3) game.r3.setView(world.scene, cam);
+    },
+    exit() {
+      if (stopKeys) stopKeys(); stopKeys = null;
+      D.dispose();
+      world = null;
     },
     update(dt) {
+      if (!world) return;
       t += dt;
-      menu.layout(view, { bh: 92 });
-      if (t > 12.6) { const c = menu.update(input, dt); if (c) return; }
+      if (anyTap(game)) press();
+      tl.update(t);
+      update3D(dt);
     },
-    render,
+    render(ctx) {
+      let black = Math.max(1 - seg(t, 0, 0.8), dip(t, CUT - 0.1, 0.35));
+      if (black > 0) { ctx.fillStyle = `rgba(0,0,0,${black})`; ctx.fillRect(0, 0, view.w, view.h); }
+      const bar = letterbox(ctx, view, 0.09);
+      const ca = smooth(seg(t, CREDITS, CREDITS + 1.2));
+      if (ca > 0) {
+        ctx.fillStyle = `rgba(0,0,0,${0.5 * ca})`;
+        ctx.fillRect(0, bar, view.w, view.h - bar * 2);
+        const k = view.isPortrait ? 0.8 : 1;
+        const mw = view.w - 80;
+        const cx = view.w / 2;
+        const lines = [
+          { s: 'CORVID', size: 92, color: '#ffcc44', gap: 70 },
+          { s: 'made for BioCraftEd Game Jam #2', size: 34, color: '#ffffff', gap: 44 },
+          { s: 'keyword: symbiosis', size: 30, color: '#3ff0ff', gap: 70 },
+          { s: 'AI tools used', size: 26, color: '#b9c4c8', gap: 42 },
+          { s: 'Claude Code', size: 32, color: '#ffffff', gap: 40 },
+          { s: 'ElevenLabs (sound effects, music, narration)', size: 32, color: '#ffffff', gap: 40 },
+          { s: 'Blender (models built via Claude)', size: 32, color: '#ffffff', gap: 0 },
+        ];
+        let total = 0;
+        for (const l of lines) total += l.gap * k;
+        let y = view.h / 2 - total / 2 - 20 * k;
+        for (const l of lines) {
+          text(ctx, l.s, cx, y, { size: l.size * k, color: l.color, alpha: ca, outline: 5, maxWidth: mw });
+          y += l.gap * k;
+        }
+        if (t >= AGAIN) {
+          const a = 0.55 + 0.45 * Math.sin(t * 4);
+          text(ctx, view.isTouch ? 'Tap to play again' : 'Tap / any key to play again', cx, view.h - bar - 60 * k, { size: 34 * k, color: '#ffcc44', alpha: a * ca, outline: 5, maxWidth: mw });
+        }
+      } else if (t > 1) {
+        const sf = view.safe || {};
+        text(ctx, view.isTouch ? 'Tap to skip' : 'Tap / any key to skip', (sf.left || 0) + 24, bar + 30, { size: 22, align: 'left', color: '#fff', alpha: 0.45, outline: 4 });
+      }
+    },
   };
 }

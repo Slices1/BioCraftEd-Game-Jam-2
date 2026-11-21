@@ -1,5 +1,14 @@
 # HANDOVER: CORVID (BioCraftEd Game Jam #2, keyword "symbiosis")
 
+## STATUS (home PC session, 21 Nov, read first)
+- The 2D entry WAS submitted. Now: the 3D rebuild per `REBUILD.md` (the contract; read it).
+- Done: three@0.160.0 vendored (`game/vendor/three`); narration `assets/voice/vo_*.mp3` (ElevenLabs "George") + sfx graft/servo/hop generated and indexed.
+- The glue agent FINISHED: index.html (import map, #gl canvas), main.js, engine/view.js (transparent), scenes/play.js, scenes/title.js, story/voice.js, story/lines.js. These are untested.
+- The cutscene agent also FINISHED: `scenes/{cutscene,intro,ending}.js` (untested).
+- INTERRUPTED (check and finish): logic (`src/logic/{rooms,rules,solver}.js`, `test-logic.html`) and render (`src/render/{r3,assets,roomView}.js`, `test-render.html`).
+- Next priority: build GLBs with the Blender MCP to the §5 asset contract in REBUILD.md and save them in `game/assets/models/`. Then integrate and test in the browser pane, and commit.
+- Tooling: there's no node or bash. git is at `C:\Users\Jonah\AppData\Local\GitHubDesktop\app-3.6.11\resources\app\git\cmd\git.exe` and python at `C:\Program Files\Python310\python.exe`.
+
 You are Claude Code on the user's home PC, which has Blender plus a Blender MCP connector. You are taking over from a laptop session that ran out of usage. Read this whole file first, then `DESIGN.md` and `JAM-PLAYBOOK.md`. The repo is public at https://github.com/Slices1/BioCraftEd-Game-Jam-2. GitHub Pages serves it at https://slices1.github.io/BioCraftEd-Game-Jam-2/, and `./deploy.sh` commits and pushes everything.
 
 **User preferences:**

@@ -1,352 +1,386 @@
-// CORVID play scene: isometric factory rooms, crow + suits. Debug: ']' = next room, R = reset room.
-import { createWorld } from '../game/world.js';
-import { P, box, tileTop, poly, METAL, DARK } from '../game/iso.js';
-import { text } from '../engine/ui.js';
+// CORVID play scene: owns the logic state + the 3D room view, translates input into logic actions,
+// reacts to logic events (audio, narration, banners) and draws the 2D HUD overlay.
+// Contract: REBUILD.md sections 1-4 and 6. Debug: ']' = next room (with ?debug), R = reset room.
+import * as THREE from 'three';
+import { ROOMS } from '../logic/rooms.js';
+import { createState, step, tick, actions, pathTo } from '../logic/rules.js';
+import { createRoomView } from '../render/roomView.js';
+import { text, roundRect } from '../engine/ui.js';
 
-let env = null, bloomMod = null;
-import('../game/env.js').then((m) => { env = m; }).catch(() => {});
-import('../game/bloom.js').then((m) => { bloomMod = m; }).catch(() => {});
+const KEY_DIRS = [
+  ['N', ['KeyW', 'ArrowUp']],
+  ['E', ['KeyD', 'ArrowRight']],
+  ['S', ['KeyS', 'ArrowDown']],
+  ['W', ['KeyA', 'ArrowLeft']],
+];
+const BEAT_HZ = 174 / 60;
 
-import { setRoomMusic } from '../game/soundtrack.js';
+function roomDims(room) {
+  let w = 1;
+  for (const row of room.map) w = Math.max(w, row.length);
+  return { w, h: room.map.length };
+}
+
+/** Upgrades granted by the consoles of every room before `index` (for ?room=N testing). */
+function carryFor(index) {
+  const upgrades = { arm: false, legs: false };
+  for (let i = 0; i < index && i < ROOMS.length; i++) {
+    for (const e of ROOMS[i].ents || []) if (e.type === 'console' && e.grants) upgrades[e.grants] = true;
+  }
+  return { upgrades };
+}
+
+function cloneCarry(c) {
+  const u = (c && c.upgrades) || {};
+  return { upgrades: { arm: !!u.arm, legs: !!u.legs } };
+}
+
 export function playScene(game) {
-  const { view, input, audio, fx, scenes } = game;
-  const cam = fx.camera;
-  const stick = { x: 0, y: 0, len: 0 };
-  const camT = { x: 0, y: 0 };
-  let slowmo = 0, clearT = 0;
-  let w, t = 0, bloom = null, envOk = true, bloomOk = true, banner = 0, bannerText = '', hum = null, winT = 0;
+  const { view, input, audio, scenes } = game;
+  const r3 = game.r3;
 
-  function safe(fn) { try { fn(); return true; } catch (e) { console.warn('[play] env/bloom error', e); return false; } }
+  let state = null, rv = null, roomIdx = 0, room = null, carryEntry = cloneCarry(null);
+  let t = 0, cd = 0;
+  let bannerT = 0, bannerText = '', bannerHint = '';
+  let completeT = 0, wonT = 0;
+  let path = [];
+  let buffered = null, bufT = 0, prevDir = null, prevHeld = [], lastKeyDir = null, joyDir = null;
+  let fitW = -1, fitH = -1, curAc = null;
+  const tmpV = new THREE.Vector3();
+  const tmpP = { x: 0, y: 0 };
 
-  function updateCamTarget(snap) {
-    const c = w.ctrl, a = c.jack ? (w.get(w.get(c.jack).pilot) || w.activeBody()) : w.activeBody();
-    const [sx, sy] = P(a.x, a.y, a.z || 0);
-    const r = w.rooms[w.roomIdx];
-    // room screen bounds (incl. back-wall height)
-    const rx0 = (r.ox - (r.oy + r.h)) * 32, rx1 = (r.ox + r.w - r.oy) * 32;
-    const ry0 = (r.ox + r.oy) * 16 - 90, ry1 = (r.ox + r.w + r.oy + r.h) * 16 + 10;
-    const hudTop = 70, hudBot = view.isTouch ? (view.isPortrait ? 250 : 40) : 30;
-    const availW = view.w - 20, availH = view.h - hudTop - hudBot;
-    let z, fit = false;
-    if (view.isPortrait) z = view.w / (9 * 64);
-    else {
-      z = Math.min(availW / (rx1 - rx0), availH / (ry1 - ry0), 1.5);
-      fit = z >= 0.8; if (!fit) z = 0.9;
-    }
-    if (fit) { camT.x = (rx0 + rx1) / 2; camT.y = (ry0 + ry1) / 2 + (hudBot - hudTop) / 2 / z; }
-    else { camT.x = sx; camT.y = sy - 30 + (view.isTouch ? (view.isPortrait ? 0.13 : 0.05) * view.h / z : 0); }
-    cam.zoom = snap ? z : cam.zoom + (z - cam.zoom) * 0.08;
-    if (snap) cam.snap();
+  const sfx = (id, o) => { try { audio.play(id, o); } catch (e) { /* audio is optional */ } };
+
+  function fit() {
+    if (!rv || !r3) return;
+    const d = roomDims(room);
+    r3.fitIso(rv.camera, new THREE.Vector3(d.w / 2, 0.6, d.h / 2), d.w, d.h);
+    fitW = view.w; fitH = view.h;
   }
 
-  // ---- drawing helpers (fallback when env.js isn't there) -------------------------------
-  function floor(sx, sy, kind, tx, ty) {
-    if (env && envOk && env.drawFloor) { envOk = safe(() => env.drawFloor(ctxRef, sx, sy, kind, t, tx * 31 + ty * 17)); if (envOk) return; }
-    tileTop(ctxRef, tx, ty, kind === 'pit' ? -1 : 0, kind === 'pit' ? '#030405' : ((tx + ty) % 2 ? '#1b1f26' : '#1e232b'), 'rgba(79,243,255,0.06)');
+  function buildView() {
+    if (rv) { try { rv.dispose(); } catch (e) { /* ignore */ } rv = null; }
+    rv = createRoomView(r3, state);
+    r3.setView(rv.scene, rv.camera);
+    fit();
   }
-  function wallBlock(sx, sy, h, face, tx, ty) {
-    if (env && envOk && env.drawRaised) { envOk = safe(() => env.drawRaised(ctxRef, sx, sy, h, t, tx * 13 + ty * 7)); if (envOk) return; }
-    box(ctxRef, tx, ty, 0, 1, 1, h, h >= 1.5 ? DARK : METAL);
-  }
-  // chasm: visible inner cliff faces (west + north pit walls, 1 level deep) plus hazard-striped lips
-  function chasm(tx, ty, items) {
-    const c = ctxRef, solid = (x, y) => { const h = w.baseHeight(x, y); return h >= 0 && h < 2; };
-    const face = (pts, z0) => { const [a, b] = [P(pts[0][0], pts[0][1], 0), P(pts[0][0], pts[0][1], -1)]; const g = c.createLinearGradient(0, a[1], 0, b[1]); g.addColorStop(0, '#3b362c'); g.addColorStop(1, '#040405'); poly(c, pts.map(([x, y, z]) => P(x, y, z)), g, 'rgba(0,0,0,.7)'); };
-    if (solid(tx - 1, ty)) face([[tx, ty, 0], [tx, ty + 1, 0], [tx, ty + 1, -1], [tx, ty, -1]]);
-    if (solid(tx, ty - 1)) face([[tx, ty, 0], [tx + 1, ty, 0], [tx + 1, ty, -1], [tx, ty, -1]]);
-    const stripe = (x0, y0, ux, uy, vx, vy) => { for (let i = 0; i < 6; i++) { const a = i / 6, b = (i + 1) / 6; poly(c, [P(x0 + ux * a, y0 + uy * a, 0.01), P(x0 + ux * b, y0 + uy * b, 0.01), P(x0 + ux * b + vx, y0 + uy * b + vy, 0.01), P(x0 + ux * a + vx, y0 + uy * a + vy, 0.01)], i % 2 ? '#15130e' : '#d9a62a'); } };
-    const lip = (cond, x0, y0, ux, uy, vx, vy) => { if (cond) items.push({ d: tx + ty - 0.4, z: 0, f: () => stripe(x0, y0, ux, uy, vx, vy) }); };
-    lip(solid(tx - 1, ty), tx - 0.12, ty, 0, 1, 0.12, 0); lip(solid(tx + 1, ty), tx + 1, ty, 0, 1, 0.12, 0);
-    lip(solid(tx, ty - 1), tx, ty - 0.12, 1, 0, 0, 0.12); lip(solid(tx, ty + 1), tx, ty + 1, 1, 0, 0, 0.12);
-  }
-  let ctxRef = null;
-  function envSafe(fn) { if (envOk) envOk = safe(fn); }
 
-  // ---- deterministic per-room set dressing: props in empty corners + overgrowth ------------
-  const decorCache = new Map();
-  function rnd(s) { return () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; }; }
-  function decorFor(r) {
-    let d = decorCache.get(r.idx); if (d) return d;
-    const R = rnd(r.idx * 7919 + 17), lvl = r.overgrowth || (r.idx === 1 || r.idx === 3 ? 'heavy' : 'light'), heavy = lvl === 'heavy';
-    const used = new Set();
-    const mark = (x, y) => { for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) used.add((x + a) * 1000 + y + b); };
-    for (const e of w.entities) if (e.room === r.idx) {
-      mark(Math.floor(e.x), Math.floor(e.y));
-      if (e.console) mark(e.console.x ?? e.console[0], e.console.y ?? e.console[1]);
-      if (e.zone) for (const [a, b] of e.zone) mark(a, b);
-    }
-    mark(r.ox + Math.floor(r.spawn[0]), r.oy + Math.floor(r.spawn[1]));
-    const floorD = new Map(), props = [], kinds = ['barrel', 'toolcart', 'cables', 'scrap', 'lamp', 'pipe_stack', 'crate_small', 'monitor'];
-    const over = ['moss', 'weeds', 'puddle', 'debris', 'moss', 'weeds'];
-    for (let ty = r.oy + 1; ty < r.oy + r.h - 1; ty++) for (let tx = r.ox + 1; tx < r.ox + r.w - 1; tx++) {
-      if (w.baseHeight(tx, ty) !== 0) continue;
-      const k = tx * 1000 + ty;
-      if (R() < (heavy ? 0.4 : 0.1)) floorD.set(k, over[(R() * over.length) | 0]);
-      const corner = (ty === r.oy + 1 || tx === r.ox + 1 || ty === r.oy + r.h - 2 || tx === r.ox + r.w - 2);
-      if (corner && !used.has(k) && R() < 0.22 && props.length < (heavy ? 5 : 3)) {
-        props.push({ tx, ty, kind: kinds[(R() * kinds.length) | 0] }); mark(tx, ty);
+  function showBanner(title, hint) {
+    bannerText = title || ''; bannerHint = hint || ''; bannerT = 3.4;
+  }
+
+  function resetInputState() {
+    path = []; buffered = null; bufT = 0; prevDir = null; prevHeld = []; lastKeyDir = null; joyDir = null; cd = 0.1;
+  }
+
+  function loadRoom(idx, carry) {
+    roomIdx = Math.max(0, Math.min(ROOMS.length - 1, idx | 0));
+    room = ROOMS[roomIdx];
+    carryEntry = cloneCarry(carry);
+    game.state.carry = cloneCarry(carry);
+    game.state.roomIndex = roomIdx;
+    state = createState(roomIdx, cloneCarry(carry));
+    completeT = 0; wonT = 0;
+    resetInputState();
+    buildView();
+    try { audio.music(room.music || 'factory', { fade: room.music === 'dnb' ? 0.6 : 1.5 }); } catch (e) { /* ignore */ }
+    showBanner(room.banner || room.name, null);
+    if (roomIdx === 0) game.voice.say('vo_r1');
+    if (room.music === 'dnb') game.voice.say('vo_r5');
+  }
+
+  function resetRoom() {
+    state = createState(roomIdx, cloneCarry(carryEntry));
+    completeT = 0; wonT = 0;
+    resetInputState();
+    buildView();
+    sfx('ui_click');
+  }
+
+  function nextRoom() {
+    const upgrades = state.mech && state.mech.upgrades ? state.mech.upgrades : {};
+    const carry = cloneCarry({ upgrades });
+    game.state.carry = carry;
+    if (roomIdx + 1 >= ROOMS.length) { scenes.go('ending', {}, { fade: 1.2 }); return; }
+    scenes.go('play', { room: roomIdx + 1, carry }, { fade: 0.9 });
+  }
+
+  // ---- input -> direction ------------------------------------------------------------------
+  function readDir() {
+    const held = [];
+    for (const [d, ks] of KEY_DIRS) if (ks.some((k) => input.key(k))) held.push(d);
+    let keyDir = null;
+    for (const d of held) if (!prevHeld.includes(d)) lastKeyDir = d;
+    prevHeld = held;
+    if (held.length) keyDir = held.includes(lastKeyDir) ? lastKeyDir : held[held.length - 1];
+    let dir = keyDir;
+    if (!dir) {
+      const j = input.joystick;
+      if (j && j.active && j.mag > 0.5) {
+        const ex = j.x + j.y, nz = j.y - j.x;
+        const vals = { E: ex, W: -ex, S: nz, N: -nz };
+        let best = 'E';
+        for (const k of ['E', 'W', 'S', 'N']) if (vals[k] > vals[best]) best = k;
+        if (joyDir && vals[joyDir] >= vals[best] - 0.15) best = joyDir; // hysteresis on diagonals
+        joyDir = best;
+        dir = best;
+      } else joyDir = null;
+    } else joyDir = null;
+    return dir;
+  }
+
+  function pickTile(lx, ly) {
+    if (!rv || !r3) return null;
+    view.toClient(lx, ly, tmpP);
+    const hit = r3.pick(tmpP.x, tmpP.y, rv.tileMeshes);
+    if (!hit || !hit.point) return null;
+    tmpV.copy(hit.point);
+    try { // nudge into the surface so side faces of tall tiles resolve to their own tile
+      if (hit.face && hit.object) {
+        const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+        tmpV.addScaledVector(n, -0.02);
       }
-    }
-    let shaft = null;
-    if (heavy) { // a tree growing through the broken roof in the back corner
-      for (let i = 0; i < 40 && !shaft; i++) {
-        const tx = r.ox + 1 + ((R() * 3) | 0), ty = r.oy + 1 + ((R() * 3) | 0);
-        if (w.baseHeight(tx, ty) === 0 && !used.has(tx * 1000 + ty)) { props.push({ tx, ty, kind: 'tree', over: true }); shaft = [tx + 0.5, ty + 0.5]; floorD.set(tx * 1000 + ty, 'moss'); }
-      }
-    }
-    d = { floor: floorD, props, shaft, vine: (tx, ty, f) => ((tx * 73 + ty * 151 + (f === 'n' ? 7 : 3)) % 100) / 100 < (heavy ? 0.6 : 0.15) };
-    decorCache.set(r.idx, d); return d;
-  }
-  // painterly colour grade: desaturate + warm/dark multiply + lamp pools
-  // perf watchdog: if fps stays < 45, drop bloom then the saturation pass
-  let lowT = 0, lowPerf = 0;
-  function perfWatch(dt) {
-    const fps = game.loop.fps || 60;
-    lowT = fps < 45 ? lowT + dt : Math.max(0, lowT - dt * 0.5);
-    if (lowT > 2 && lowPerf < 2) { lowPerf++; lowT = 0; if (bloom) bloom.enabled = false; }
-  }
-  function grade(ctx) {
-    ctx.save();
-    if (lowPerf < 2) ctx.globalCompositeOperation = 'saturation';
-    else ctx.globalCompositeOperation = 'source-over', ctx.globalAlpha = 0; ctx.fillStyle = 'rgba(128,128,128,0.42)'; ctx.fillRect(0, 0, view.w, view.h);
-    ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = 'rgb(200,188,170)'; ctx.fillRect(0, 0, view.w, view.h);
-    ctx.restore();
+    } catch (e) { /* ignore */ }
+    return { x: Math.floor(tmpV.x), z: Math.floor(tmpV.z) };
   }
 
-  // ---- static layer cache: floors, pits, back walls + overgrowth of a room baked into one offscreen canvas --------
-  const layerCache = new Map(), LS = 1.6;
-  function roomBounds(r, WH) {
-    return { x0: (r.ox - (r.oy + r.h)) * 32 - 48, x1: (r.ox + r.w - r.oy) * 32 + 48, y0: (r.ox + r.oy) * 16 - WH * 32 - 60, y1: (r.ox + r.w + r.oy + r.h) * 16 + 48 };
-  }
-  function drawStatic(ctx, r, isCur) {
-    const dec = decorFor(r), WH = isCur ? 2.6 : 0.5, items = [];
-    ctxRef = ctx;
-    for (let ty = r.oy; ty < r.oy + r.h; ty++) for (let tx = r.ox; tx < r.ox + r.w; tx++) {
-      if (w.tileRoom(tx, ty) !== r.idx) continue;
-      const [sx, sy] = P(tx, ty, 0), bh = w.baseHeight(tx, ty), seed = tx * 13 + ty * 7;
-      if (!(bh <= 0 || w.isVent(tx, ty))) continue;
-      floor(sx, sy, bh < 0 ? 'pit' : w.isVent(tx, ty) ? 'grate' : 'floor', tx, ty);
-      if (bh < 0) chasm(tx, ty, items);
-      const d = dec.floor.get(tx * 1000 + ty);
-      if (d && env && env.drawOvergrowth) envSafe(() => env.drawOvergrowth(ctx, sx, sy, d, seed, t));
-      if (env && envOk && env.drawWall) {
-        if (ty - 1 === r.oy && w.baseHeight(tx, ty - 1) >= 2) items.push({ d: tx + ty - 0.5, f: () => { envSafe(() => env.drawWall(ctx, sx, sy, WH, 'n', t, seed)); if (dec.vine(tx, ty, 'n')) envSafe(() => env.drawOvergrowth(ctx, sx, sy, 'vines_n', seed, t, WH * 32)); } });
-        if (tx - 1 === r.ox && w.baseHeight(tx - 1, ty) >= 2) items.push({ d: tx + ty - 0.5, f: () => { envSafe(() => env.drawWall(ctx, sx, sy, WH, 'w', t, seed + 5)); if (dec.vine(tx, ty, 'w')) envSafe(() => env.drawOvergrowth(ctx, sx, sy, 'vines_w', seed + 3, t, WH * 32)); } });
-      }
-    }
-    items.sort((p, q) => p.d - q.d); for (const it of items) it.f();
-  }
-  function staticLayer(r, isCur) {
-    const key = r.idx + (isCur ? 'c' : 'o') + (env ? 'e' : '') + (envOk ? '' : 'x');
-    let L = layerCache.get(key);
-    if (L) return L;
-    if (typeof document === 'undefined') return null;
-    const B = roomBounds(r, isCur ? 2.6 : 0.5), cv = document.createElement('canvas');
-    cv.width = Math.ceil((B.x1 - B.x0) * LS); cv.height = Math.ceil((B.y1 - B.y0) * LS);
-    const c = cv.getContext('2d'); c.setTransform(LS, 0, 0, LS, -B.x0 * LS, -B.y0 * LS);
-    const keep = ctxRef; drawStatic(c, r, isCur); ctxRef = keep;
-    L = { cv, B }; layerCache.set(key, L);
-    return L;
-  }
-  // per-room dynamic tile items (raised tiles, interior walls, vents, front stubs) — geometry only, built once
-  const tileItems = new Map();
-  function roomTiles(r) {
-    let list = tileItems.get(r.idx); if (list) return list;
-    list = [];
-    for (let ty = r.oy; ty < r.oy + r.h; ty++) for (let tx = r.ox; tx < r.ox + r.w; tx++) {
-      if (w.tileRoom(tx, ty) !== r.idx) continue;
-      const bh = w.baseHeight(tx, ty), vent = w.isVent(tx, ty);
-      const border = ty === r.oy || tx === r.ox || ty === r.oy + r.h - 1 || tx === r.ox + r.w - 1;
-      if (bh <= 0 && !vent) {
-        if (ty + 1 === r.oy + r.h - 1 && w.baseHeight(tx, ty + 1) >= 2) list.push({ k: 'stub', tx, ty, face: 'stub' });
-        if (tx + 1 === r.ox + r.w - 1 && w.baseHeight(tx + 1, ty) >= 2) list.push({ k: 'stub', tx, ty, face: 'stubR' });
-      } else if (vent) list.push({ k: 'vent', tx, ty });
-      else if (border && bh >= 2) list.push({ k: 'border', tx, ty });
-      else list.push({ k: bh >= 2 ? 'wall' : 'plat', tx, ty, h: bh });
-    }
-    tileItems.set(r.idx, list); return list;
-  }
-  function tallBlock(ctx, tx, ty, H, alpha, hole) {
-    const [sx, sy] = P(tx, ty, 0);
-    if (alpha < 1) { ctx.save(); ctx.globalAlpha = alpha; }
-    wallBlock(sx, sy, H, 'stub', tx, ty);
-    if (hole) { // crow-sized opening through the wall, on both visible faces
-      const dark = '#020203', rim = 'rgba(79,243,255,0.75)', zh = 0.9;
-      poly(ctx, [P(tx + 0.2, ty + 1, 0), P(tx + 0.8, ty + 1, 0), P(tx + 0.8, ty + 1, zh), P(tx + 0.2, ty + 1, zh)], dark, rim, 2);
-      poly(ctx, [P(tx + 1, ty + 0.2, 0), P(tx + 1, ty + 0.8, 0), P(tx + 1, ty + 0.8, zh), P(tx + 1, ty + 0.2, zh)], dark, rim, 2);
-    }
-    if (alpha < 1) ctx.restore();
+  function doStep(action) {
+    let changed = false;
+    try { changed = step(state, action); } catch (e) { console.error('[play] step failed', e); }
+    return changed;
   }
 
-  function render(ctx) {
-    ctxRef = ctx;
-    ctx.fillStyle = '#07080b'; ctx.fillRect(0, 0, view.w, view.h);
-    if (env && envOk && env.drawBackdrop) envOk = safe(() => env.drawBackdrop(ctx, view, t));
-    cam.begin(ctx);
-    const cur = w.rooms[w.roomIdx];
-    const vis = cam.visible;
-    const items = [];
-    const act = w.ctrl.jack ? (w.get(w.get(w.ctrl.jack).pilot) || w.activeBody()) : w.activeBody();
-    for (const r of w.rooms) {
-      const isCur = r === cur, WH = isCur ? 2.6 : 0.5, B = roomBounds(r, WH);
-      if (B.x1 < vis.x || B.x0 > vis.x + vis.w || B.y1 < vis.y || B.y0 > vis.y + vis.h) continue;
-      const L = staticLayer(r, isCur);
-      if (L) ctx.drawImage(L.cv, L.B.x0, L.B.y0, L.cv.width / LS, L.cv.height / LS);
-      else drawStatic(ctx, r, isCur);
-      const dec = decorFor(r);
-      for (const q of roomTiles(r)) {
-        const { tx, ty } = q, [sx, sy] = P(tx, ty, 0), seed = tx * 13 + ty * 7;
-        if (q.k === 'stub') { if (env && envOk && env.drawWall) items.push({ d: tx + ty + 1.95, z: 0, f: () => envSafe(() => env.drawWall(ctx, sx, sy, 1, q.face, t, seed)) }); }
-        else if (q.k === 'border') { if (!(env && envOk && env.drawWall)) items.push({ d: tx + ty + 1, z: 0, f: () => wallBlock(sx, sy, 0.45, 'stub', tx, ty) }); }
-        else if (q.k === 'plat') items.push({ d: tx + ty + 1, z: 0, ph: q.h, f: () => wallBlock(sx, sy, q.h, 'stub', tx, ty) });
-        else { // interior tall wall / vent: full height in the current room, x-ray when the active body is behind it
-          const H = isCur ? 2.2 : 0.5;
-          let al = 1;
-          if (isCur && act && act.x + act.y < tx + ty + 1 && Math.abs((act.x - act.y) - (tx + 0.5 - ty - 0.5)) < 1.6 && tx + ty + 1 - (act.x + act.y) < 3.2) al = 0.35;
-          items.push({ d: tx + ty + (q.k === 'vent' ? 0.4 : 1), z: 0, f: () => tallBlock(ctx, tx, ty, H, al, q.k === 'vent') });
+  // ---- events -> audio / narration / banners -------------------------------------------------
+  function handleEvents(evs) {
+    for (const e of evs) {
+      switch (e.type) {
+        case 'move':
+          if (e.who === 'crow') sfx('flap'); else if (e.who === 'mech') sfx('step');
+          break;
+        case 'plate_on': sfx('plate_on'); break;
+        case 'door_open': sfx('door_open'); break;
+        case 'jam': sfx('cog_jam'); path = []; break;
+        case 'pickup': sfx('stick_pick'); break;
+        case 'drop': sfx('stick_pick', { volume: 0.6, rate: 0.85 }); break;
+        case 'graft': {
+          const part = e.part || e.id || e.what || e.name;
+          sfx(audio.has && audio.has('graft') ? 'graft' : 'jack_in');
+          if (part === 'arm') game.voice.say('vo_arm');
+          else if (part === 'legs') game.voice.say('vo_legs');
+          path = [];
+          break;
         }
-      }
-      if (env && env.drawProp) for (const p of dec.props) { const [sx, sy] = P(p.tx, p.ty, 0); items.push({ d: p.tx + p.ty + 0.9, z: 0, f: () => envSafe(() => p.over ? env.drawOvergrowth(ctx, sx, sy, p.kind, p.tx * 7 + p.ty, t) : env.drawProp(ctx, sx, sy, p.kind, t, p.tx * 7 + p.ty)) }); }
-      if (isCur && dec.shaft && env && env.drawOvergrowth) { const [sx, sy] = P(dec.shaft[0], dec.shaft[1], 0); items.push({ d: 999, z: 0, f: () => envSafe(() => env.drawOvergrowth(ctx, sx, sy + 16, 'shaft', 1, t)) }); }
-    }
-    const beamSet = new Set(w.emitters);
-    for (const e of w.entities) {
-      if (e.hidden && e.type !== 'crow') continue;
-      const ez = Math.max(e.z || 0, e.type === 'crow' ? (e.groundZ || 0) : 0);
-      items.push({ d: e.depth, z: e.z || 0, ez: 'hw' in e ? ez : null, f: () => e.draw(ctx, t, w) });
-      if (beamSet.has(e)) items.push({ d: e.x + e.y + 1.5, z: 3, f: () => e.drawBeam(ctx, t) });
-    }
-    // painter's sort by (x+y) then height; bodies standing at/above a platform's height always draw over nearby platform tiles
-    items.sort((a, b) => {
-      if (a.ph != null && b.ez != null && b.ez >= a.ph - 0.05 && Math.abs(a.d - b.d) < 2.6) return -1;
-      if (b.ph != null && a.ez != null && a.ez >= b.ph - 0.05 && Math.abs(a.d - b.d) < 2.6) return 1;
-      return a.d - b.d || a.z - b.z;
-    });
-    for (const it of items) it.f();
-    drawGuides(ctx, cur);
-    fx.drawWorld(ctx);
-    cam.end(ctx);
-    grade(ctx);
-    if (bloomMod && bloomOk) {
-      if (!bloom) bloomOk = safe(() => { bloom = bloomMod.createBloom({ strength: 0.45, quality: 1, targetMs: 21 }); });
-      if (bloom && lowPerf > 0) bloom.enabled = false;
-      if (bloom && bloom.enabled && bloom.quality > 0) bloomOk = safe(() => bloom.apply(ctx, game.canvas));
-    }
-    cam.begin(ctx); drawPrompt(ctx); cam.end(ctx);
-    hud(ctx, cur);
-  }
-
-  // in-world guides: lift decks ("Stand here"), free sticks, cracked walls that need the press
-  function guideText(ctx, str, x, y, z, col) {
-    const [sx, sy] = P(x, y, z), k = 1 / Math.max(0.6, cam.zoom);
-    ctx.save(); ctx.translate(sx, sy); ctx.scale(k, k); ctx.font = '700 15px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.strokeText(str, 0, 0); ctx.fillStyle = col; ctx.fillText(str, 0, 0); ctx.restore();
-  }
-  function drawGuides(ctx, cur) {
-    const a = w.activeBody(), pulse = 0.55 + 0.45 * Math.sin(t * 5);
-    for (const e of w.entities) {
-      if (e.room !== cur.idx) continue;
-      if (e.type === 'lift') {
-        const z = (e.vis ?? e.level) + 0.02, onIt = w.bodies.some((b) => b.type === 'suit' && b.onTile(e.x, e.y));
-        ctx.save(); ctx.globalAlpha = 0.5 + 0.4 * pulse; poly(ctx, [P(e.x + 0.06, e.y + 0.06, z), P(e.x + 0.94, e.y + 0.06, z), P(e.x + 0.94, e.y + 0.94, z), P(e.x + 0.06, e.y + 0.94, z)], null, e.on ? '#4ff3ff' : '#ffb63b', 3); ctx.restore();
-        if (!onIt && a && a.type === 'suit' && Math.hypot(a.x - e.x - 0.5, a.y - e.y - 0.5) < 4) guideText(ctx, e.on ? 'Stand here ▼' : 'Lift (needs power)', e.x + 0.5, e.y + 0.5, z + 1.1, e.on ? '#bff8ff' : '#ffd89a');
-      } else if (e.type === 'stick' && !e.carried && !e.used) {
-        const [sx, sy] = P(e.x, e.y, 0.05);
-        ctx.save(); ctx.globalAlpha = 0.35 + 0.4 * pulse; ctx.strokeStyle = '#ffb63b'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.ellipse(sx, sy, 26 + pulse * 6, 13 + pulse * 3, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
-        if (a && a.type === 'crow' && !w.crow.carry) guideText(ctx, 'STICK', e.x, e.y, 1.1, '#ffd89a');
-      } else if (e.type === 'cracked' && !e.broken) {
-        guideText(ctx, 'CRACKED · needs the PRESS', e.x + 0.5, e.y + 0.5, 2.9, '#ffb63b');
+        case 'grab': sfx('magnet_on'); path = []; break;
+        case 'release': sfx('magnet_drop'); break;
+        case 'hop': sfx('land', { volume: 0.8 }); break;
+        case 'swap': sfx(e.to === 'crow' ? 'jack_out' : 'jack_in'); path = []; break;
+        case 'pushed': sfx('press_slam', { volume: 0.6 }); break;
+        case 'death':
+          sfx('zap_death');
+          game.fx.flash('#ff2a3a', 0.4, 0.5);
+          path = [];
+          game.voice.say('vo_death');
+          break;
+        case 'bump': sfx('ui_click', { volume: 0.35 }); break;
+        case 'zone': {
+          const z = room.zones && room.zones[e.index != null ? e.index : e.i];
+          if (z) {
+            if (z.banner) showBanner(z.banner, null);
+            if (z.say) game.voice.say(z.say);
+          }
+          break;
+        }
+        case 'complete':
+          if (completeT === 0) { completeT = 1.0; sfx('ui_confirm'); path = []; }
+          break;
+        case 'won':
+          if (wonT === 0) { wonT = 1.8; sfx('win'); path = []; }
+          break;
+        default: break;
       }
     }
   }
 
-  function actions() {
-    const c = w.ctrl, cr = w.crow;
-    if (cr.dead > 0 || w.won) return { a: '', b: '' };
-    if (c.jack) { const l = w.get(c.jack).label(w); return { a: l || 'Act', b: 'Exit' }; }
-    const a = w.activeBody();
-    if (a.type === 'suit') return { a: w.machineNear(a) ? 'Jack in' : '', b: 'Exit' };
-    let la = '';
-    if (cr.carry) la = w.cogNear(cr) ? 'Jam stick' : 'Drop stick'; else if (w.stickNear(cr)) la = 'Pick up stick';
-    return { a: la, b: w.suitNear(cr) ? 'Enter mech' : '' };
+  // ---- finale beat clock ----------------------------------------------------------------------
+  function beatIndex() {
+    const actx = audio.ctx;
+    if (actx && actx.state === 'running' && audio.currentMusic === room.music) {
+      let h = null;
+      try { h = audio.music(room.music, { fade: 0.6 }); } catch (e) { h = null; }
+      if (h && h.playing !== false) {
+        const bc = game.state.beatClock;
+        if (!bc || bc.handle !== h) game.state.beatClock = { handle: h, t0: actx.currentTime };
+        return Math.floor((actx.currentTime - game.state.beatClock.t0) * BEAT_HZ);
+      }
+    }
+    return Math.floor(t * BEAT_HZ);
   }
 
-  function drawPrompt(ctx) {
-    if (view.isTouch) return;
-    const ac = actions(), p = [ac.a && `[E] ${ac.a}`, ac.b && `[Q] ${ac.b}`].filter(Boolean).join('   ');
-    if (!p) return;
-    const c = w.ctrl, a = c.jack ? (w.get(w.get(c.jack).pilot) || w.activeBody()) : w.activeBody();
-    const [sx, sy0] = P(a.x, a.y, (a.z || 0) + (a.type === 'suit' ? 2.6 : 1.5));
-    const k = 1 / Math.max(0.6, cam.zoom), sy = sy0 - Math.abs(Math.sin(t * 3)) * 3 * k;
-    ctx.save(); ctx.translate(sx, sy); ctx.scale(k, k); ctx.font = '700 20px system-ui, sans-serif';
-    const tw = ctx.measureText(p).width + 26;
-    ctx.fillStyle = 'rgba(14,12,10,0.92)'; ctx.strokeStyle = 'rgba(255,196,110,0.9)'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(-tw / 2, -42, tw, 32, 9) : ctx.rect(-tw / 2, -42, tw, 32); ctx.fill(); ctx.stroke();
-    poly(ctx, [[-7, -10], [7, -10], [0, -1]], 'rgba(255,196,110,0.9)');
-    ctx.fillStyle = '#fff3dc'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(p, 0, -25); ctx.restore();
-  }
-
-  function hud(ctx, cur) {
-    const top = view.safe.top + 16, left = view.safe.left + 16;
-    text(ctx, `${cur.idx + 1} · ${cur.name}`, left, top + 14, { size: 22, align: 'left', color: '#9fdfe6', outline: 4 });
-    if (clearT > 0 && w.roomIdx > 0) text(ctx, 'ROOM CLEAR', view.w / 2, view.h * 0.36, { size: 54, outline: 7, color: '#ffd89a', alpha: Math.min(1, clearT * 2) });
-    if (banner > 0) {
-      text(ctx, cur.name, view.w / 2, view.h * 0.2, { size: 46, outline: 6, color: '#e9fbff', alpha: Math.min(1, banner) });
-      text(ctx, cur.hint || '', view.w / 2, view.h * 0.2 + 44, { size: 24, outline: 4, color: '#ffb63b', alpha: Math.min(1, banner), maxWidth: view.w - 40 });
-    }
-    if (t < 6 && w.roomIdx === 0) {
-      const h = view.isTouch ? 'Stick: move · A/B: contextual · ↺ reset' : 'WASD move · E act · Q/Shift suit · R reset';
-      text(ctx, h, view.w / 2, view.isTouch ? view.safe.top + 70 : view.h - view.safe.bottom - 40, { size: 22, outline: 4, alpha: Math.min(1, 6 - t), maxWidth: view.w - 40 });
-    }
-    if (w.won) {
-      ctx.fillStyle = `rgba(0,0,0,${Math.min(0.7, winT * 0.4)})`; ctx.fillRect(0, 0, view.w, view.h);
-      text(ctx, 'THE GREAT SHINY IS YOURS', view.w / 2, view.h / 2, { size: 44, outline: 6, color: '#fff4b0', maxWidth: view.w - 40 });
-    }
-  }
-
+  // ---- scene ----------------------------------------------------------------------------------
   return {
     pausable: true,
-    touch: { joystick: true, buttons: [{ id: 'buttonA', label: 'A' }, { id: 'buttonB', label: 'B' }, { id: 'buttonR', label: '↺', size: 28 }] },
+    touch: {
+      joystick: { zone: { x0: 0, y0: 0.5, x1: 0.62, y1: 1 } },
+      buttons: [{ id: 'buttonA', label: 'A' }, { id: 'buttonB', label: 'B' }, { id: 'buttonR', label: '↺', size: 28 }],
+    },
+
     enter(params) {
-      w = createWorld(game);
-      t = 0; banner = 3; winT = 0;
-      w.onEnterRoom = () => { banner = 3; slowmo = 0.6; clearT = 1.4; fx.flash('#fff1d0', 0.18, 0.4); audio.play('ui_click'); setRoomMusic(w.roomIdx, w.rooms.length); try { game.storage.set('save', w.getSave()); } catch (e) { /* ignore */ } };
-      if (params && params.cont) w.loadSave(params.cont);
-      setRoomMusic(w.roomIdx, w.rooms.length);
-      cam.reset(); cam.follow(camT, 6);
-      updateCamTarget(true);
-      game.state.world = w;
-      { // debug/preview hooks: ?room=N&demo=pilot|stick|jack
-        const pr = game.params || new URLSearchParams(location.search), n = +(pr.get && pr.get('room')) || 0;
-        const oe = w.onEnterRoom; w.onEnterRoom = null;
-        for (let i = 0; i < n; i++) { w.teleportNext(); w.update(1 / 60, { mx: 0, my: 0 }); }
-        const demo = pr.get && pr.get('demo'), cr = w.crow, rm = w.roomIdx;
-        const near = (ty) => w.entities.find((e) => e.type === ty && e.room === rm);
-        if (demo === 'stick') { const s = near('stick'); if (s) { cr.x = s.x; cr.y = s.y; w.update(1 / 60, { mx: 0, my: 0, act: true }); } }
-        if (demo === 'pilot' || demo === 'jack') { const s = near('suit'); if (s) { cr.x = s.x; cr.y = s.y; w.update(1 / 60, { mx: 0, my: 0, swap: true });
-          const m = demo === 'jack' && w.entities.find((e) => e.console && e.room === rm); if (m) { s.x = m.console.x + 0.5; s.y = m.console.y + 0.5; w.update(1 / 60, { mx: 0, my: 0, act: true }); } } }
-        w.onEnterRoom = oe; updateCamTarget(true);
+      params = params || {};
+      t = 0;
+      if (!r3) return;
+      let idx = 0, carry = null;
+      if (params.room != null) { idx = params.room | 0; carry = params.carry || carryFor(idx); }
+      else {
+        const q = game.params && game.params.get ? parseInt(game.params.get('room'), 10) : NaN;
+        if (q > 0) { idx = q; carry = carryFor(Math.min(q, ROOMS.length - 1)); }
+        else carry = params.carry || null;
+      }
+      loadRoom(idx, carry);
+      input.setTouchButton('buttonR', { visible: true });
+    },
+
+    exit() {
+      if (rv) { try { rv.dispose(); } catch (e) { /* ignore */ } rv = null; }
+    },
+
+    update(dt) {
+      t += dt;
+      bannerT = Math.max(0, bannerT - dt);
+      cd = Math.max(0, cd - dt);
+      bufT = Math.max(0, bufT - dt);
+      if (!rv || !state) return;
+      if (view.w !== fitW || view.h !== fitH) fit();
+
+      const locked = completeT > 0 || wonT > 0 || scenes.transitioning;
+
+      if (!locked) {
+        if (input.pressed('reset')) { resetRoom(); }
+        else {
+          if (input.pressed('debugNext') && game.debug && roomIdx + 1 < ROOMS.length) {
+            scenes.go('play', { room: roomIdx + 1, carry: cloneCarry({ upgrades: state.mech.upgrades }) }, { fade: 0.3 });
+          }
+          if (input.pressed('act')) { path = []; doStep({ type: 'act' }); }
+          if (input.pressed('swap')) { path = []; doStep({ type: 'swap' }); }
+
+          // movement: keys / joystick (hold repeats), with a short buffer so quick taps are not lost
+          const dir = readDir();
+          if (dir && dir !== prevDir) { buffered = dir; bufT = 0.3; }
+          prevDir = dir;
+          const want = dir || (bufT > 0 ? buffered : null);
+
+          // tap / click on a tile -> path
+          const tap = input.tap;
+          if (tap && (tap.type !== 'mouse' || tap.button === 0)) {
+            const tile = pickTile(tap.x, tap.y);
+            if (tile) {
+              let p = [];
+              try { p = pathTo(state, tile.x, tile.z) || []; } catch (e) { console.error('[play] pathTo failed', e); }
+              path = p.slice();
+              if (!path.length) sfx('ui_click', { volume: 0.3 });
+            }
+          }
+
+          if (want) {
+            path = [];
+            if (cd <= 0 && !rv.busy()) {
+              const changed = doStep({ type: 'move', dir: want });
+              buffered = null; bufT = 0;
+              cd = changed ? 0 : 0.12;
+            }
+          } else if (path.length && cd <= 0 && !rv.busy()) {
+            const d = path.shift();
+            const changed = doStep({ type: 'move', dir: d });
+            if (!changed) { path = []; cd = 0.1; }
+          }
+        }
+        if (!state) return;
+
+        if (room.music === 'dnb' && !state.won) {
+          try { tick(state, beatIndex()); } catch (e) { console.error('[play] tick failed', e); }
+        }
+      }
+
+      rv.sync(state, dt);
+      const evs = state.events || [];
+      if (evs.length) {
+        try { rv.handleEvents(evs); } catch (e) { console.error('[play] view events failed', e); }
+        handleEvents(evs);
+        evs.length = 0;
+      }
+      if (state.won && wonT === 0) { wonT = 1.8; sfx('win'); }
+
+      // context buttons
+      let ac = { act: null, swap: null };
+      try { ac = actions(state) || ac; } catch (e) { /* ignore */ }
+      curAc = locked ? null : ac;
+      input.setTouchButton('buttonA', { visible: !!ac.act && !locked, hint: ac.act || '' });
+      input.setTouchButton('buttonB', { visible: !!ac.swap && !locked, hint: ac.swap || '' });
+      input.setTouchButton('buttonR', { visible: true });
+
+      if (completeT > 0) {
+        completeT -= dt;
+        if (completeT <= 0 && !scenes.transitioning) { completeT = -1; nextRoom(); }
+      }
+      if (wonT > 0) {
+        wonT -= dt;
+        if (wonT <= 0 && !scenes.transitioning) { wonT = -1; scenes.go('ending', {}, { fade: 1.2 }); }
       }
     },
-    exit() { game.loop.timeScale = 1; if (hum) { hum.stop(0.2); hum = null; } },
-    update(dt) {
-      t += dt; perfWatch(dt); banner = Math.max(0, banner - dt); clearT = Math.max(0, clearT - dt);
-      if (slowmo > 0) { slowmo -= dt / Math.max(0.05, game.loop.timeScale); game.loop.timeScale = slowmo > 0 ? 0.35 : 1; }
-      { const ac = actions(); input.setTouchButton('buttonA', { visible: !!ac.a, hint: ac.a }).setTouchButton('buttonB', { visible: !!ac.b, hint: ac.b }); }
-      input.stick(stick);
-      // screen direction -> world: screen up = world (-x, -y)
-      let mx = stick.x + stick.y, my = stick.y - stick.x;
-      const l = Math.hypot(mx, my);
-      if (l > 0.001) { mx = mx / l * stick.len; my = my / l * stick.len; }
-      if (input.pressed('reset')) { w.reset(); audio.play('ui_click'); }
-      if (input.pressed('debugNext')) w.teleportNext();
-      w.update(dt, { mx, my, act: input.pressed('act'), swap: input.pressed('swap') });
-      updateCamTarget(false);
-      const wantHum = w.rooms[w.roomIdx].ents.some((e) => e.type === 'emitter');
-      if (wantHum && !hum) { const h = audio.play('laser_hum', { loop: true, volume: 0.4 }); if (h && h.playing !== false) hum = h; }
-      else if (!wantHum && hum) { hum.stop(0.5); hum = null; }
-      if (w.won) { winT += dt; if (winT > 1.8 && !scenes.transitioning) { try { game.storage.remove('save'); } catch (e) { /* ignore */ } scenes.go(scenes.has && scenes.has('ending') ? 'ending' : 'title', { time: w.time, deaths: w.deaths }, { fade: 1.2 }); } }
+
+    render(ctx) {
+      if (!r3) {
+        ctx.fillStyle = '#0f1416'; ctx.fillRect(0, 0, view.w, view.h);
+        text(ctx, 'WebGL is not available on this device.', view.w / 2, view.h / 2, { size: 30, maxWidth: view.w - 40 });
+        return;
+      }
+      if (!rv || !state) return;
+      const top = view.safe.top + 16, left = view.safe.left + 16;
+      text(ctx, room.name || '', left, top + 14, { size: 22, align: 'left', color: '#bfe3e0', outline: 4, alpha: 0.85 });
+
+      // desktop prompt above the controlled body
+      const ac = curAc;
+      if (!view.isTouch && ac && (ac.act || ac.swap)) drawPrompt(ctx, ac);
+
+      // banner + hint
+      if (bannerT > 0 && bannerText) {
+        const a = Math.min(1, bannerT * 1.5, (3.4 - bannerT) * 4);
+        const y = view.safe.top + Math.max(90, view.h * 0.14);
+        text(ctx, bannerText, view.w / 2, y, { size: view.isPortrait ? 44 : 52, outline: 6, color: '#ffe3b0', alpha: a, maxWidth: view.w - 40 });
+        const hint = bannerHint || (roomIdx === 0 && bannerText === (room.banner || room.name) ? controlsHint() : '');
+        if (hint) text(ctx, hint, view.w / 2, y + 48, { size: 24, outline: 4, color: '#e9fbff', alpha: a, maxWidth: view.w - 40 });
+      }
+      if (!view.isTouch) {
+        text(ctx, 'WASD move   E act   Q swap   R reset   click to walk', view.w / 2, view.h - view.safe.bottom - 22,
+          { size: 18, outline: 3, color: '#ffffff', alpha: 0.4, maxWidth: view.w - 40 });
+      }
     },
-    render,
   };
+
+  function controlsHint() {
+    return view.isTouch ? 'Drag to move, or tap a tile to walk there' : 'WASD / arrows to move, or click a tile to walk there';
+  }
+
+  function drawPrompt(ctx, ac) {
+    const b = state.control === 'mech' ? state.mech : state.crow;
+    if (!b) return;
+    const wy = state.control === 'mech' ? (b.h || 0) + 1.6 : 1.4;
+    tmpV.set(b.x + 0.5, wy, b.z + 0.5);
+    let s = null;
+    try { s = rv.worldToScreen(tmpV); } catch (e) { s = null; }
+    if (!s) return;
+    view.toLogical(s.x, s.y, tmpP);
+    const str = [ac.act && `[E] ${ac.act}`, ac.swap && `[Q] ${ac.swap}`].filter(Boolean).join('    ');
+    const size = 22;
+    ctx.save();
+    ctx.font = `700 ${size}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+    const tw = ctx.measureText(str).width + 28, th = size + 16;
+    const x = Math.max(tw / 2 + 8, Math.min(view.w - tw / 2 - 8, tmpP.x));
+    const y = Math.max(th + 8, tmpP.y - 10 - Math.abs(Math.sin(t * 3)) * 4);
+    roundRect(ctx, x - tw / 2, y - th, tw, th, 10);
+    ctx.fillStyle = 'rgba(14,12,10,0.88)'; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,196,110,0.9)'; ctx.stroke();
+    ctx.fillStyle = '#fff3dc'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(str, x, y - th / 2 + 1);
+    ctx.restore();
+  }
 }

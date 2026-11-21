@@ -32,9 +32,23 @@
     ],
     "ui_confirm": "sfx/ui_confirm.mp3",
     "win": "sfx/win.mp3",
+    "graft": "sfx/graft.mp3",
+    "servo": "sfx/servo.mp3",
+    "hop": "sfx/hop.mp3",
     "menu": "music/menu.mp3",
     "factory": "music/factory.mp3",
-    "dnb": "music/dnb.mp3"
+    "dnb": "music/dnb.mp3",
+    "vo_intro1": "voice/vo_intro1.mp3",
+    "vo_intro2": "voice/vo_intro2.mp3",
+    "vo_intro3": "voice/vo_intro3.mp3",
+    "vo_r1": "voice/vo_r1.mp3",
+    "vo_r2": "voice/vo_r2.mp3",
+    "vo_arm": "voice/vo_arm.mp3",
+    "vo_legs": "voice/vo_legs.mp3",
+    "vo_r5": "voice/vo_r5.mp3",
+    "vo_death": "voice/vo_death.mp3",
+    "vo_win1": "voice/vo_win1.mp3",
+    "vo_win2": "voice/vo_win2.mp3"
   },
   "base": "assets/",
   "kinds": {
@@ -44,6 +58,8 @@
       "crate_land",
       "door_open",
       "flap",
+      "graft",
+      "hop",
       "jack_in",
       "jack_out",
       "land",
@@ -52,6 +68,7 @@
       "magnet_on",
       "plate_on",
       "press_slam",
+      "servo",
       "step",
       "stick_pick",
       "ui_click",
@@ -64,6 +81,19 @@
       "dnb",
       "factory",
       "menu"
+    ],
+    "voice": [
+      "vo_arm",
+      "vo_death",
+      "vo_intro1",
+      "vo_intro2",
+      "vo_intro3",
+      "vo_legs",
+      "vo_r1",
+      "vo_r2",
+      "vo_r5",
+      "vo_win1",
+      "vo_win2"
     ]
   }
 }

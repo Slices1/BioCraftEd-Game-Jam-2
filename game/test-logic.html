@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>CORVID logic test</title>
+<style>
+  body { background: #0f1416; color: #cfd8d4; font: 14px/1.4 Consolas, monospace; margin: 16px; }
+  h1 { font-size: 18px; }
+  .pass { color: #7fd36b; }
+  .fail { color: #ff6b5a; }
+  pre { white-space: pre-wrap; word-break: break-word; }
+</style>
+</head>
+<body>
+<h1>CORVID logic test</h1>
+<pre id="out">running...</pre>
+<script type="module">
+import { ROOMS } from './src/logic/rooms.js';
+import { createState, step } from './src/logic/rules.js';
+import { solve, parseAction } from './src/logic/solver.js';
+
+const out = document.getElementById('out');
+const lines = [];
+function log(text, cls) {
+  lines.push(cls ? '<span class="' + cls + '">' + text + '</span>' : text);
+  out.innerHTML = lines.join('\n');
+}
+
+try {
+  let carry = { upgrades: { arm: false, legs: false } };
+  const summary = { pass: true, rooms: [] };
+  for (let i = 0; i < ROOMS.length; i++) {
+    const room = ROOMS[i];
+    const r = solve(i, carry);
+    const strict = solve(i, carry, { strict: true, softlock: false });
+    const inRange = r.steps >= 15 && r.steps <= 50;
+    const pass = r.ok && strict.ok && r.softlocks === 0 && r.softlockChecked && !r.capped;
+    summary.pass = summary.pass && pass;
+    log(room.id + ' ' + room.name + ': ' + (pass ? 'PASS' : 'FAIL'), pass ? 'pass' : 'fail');
+    log('  solvable=' + r.ok + ' steps=' + r.steps + (inRange ? '' : ' (outside 15-50)') +
+        ' explored=' + r.explored + ' capped=' + r.capped + ' ms=' + r.ms);
+    log('  softlocks=' + (r.softlockChecked ? r.softlocks : 'not checked') +
+        ' | strict(lasers on): ok=' + strict.ok + ' steps=' + strict.steps + ' explored=' + strict.explored + ' ms=' + strict.ms);
+    log('  actions: ' + r.actions.join(' '));
+    if (r.softlockExamples.length) {
+      for (const ex of r.softlockExamples) log('  softlock example: ' + ex.join(' '), 'fail');
+    }
+    // replay to carry the upgrades into the next room
+    const s = createState(i, carry);
+    let done = false;
+    for (const a of r.actions) step(s, parseAction(a));
+    done = !!(s.complete || s.won);
+    if (!done) log('  replay did not finish the room!', 'fail');
+    if (!done) summary.pass = false;
+    carry = { upgrades: { arm: s.mech.upgrades.arm, legs: s.mech.upgrades.legs } };
+    summary.rooms.push({
+      id: room.id, pass: pass, steps: r.steps, explored: r.explored,
+      softlocks: r.softlocks, strictOk: strict.ok, strictSteps: strict.steps, ms: r.ms,
+    });
+  }
+  log('OVERALL: ' + (summary.pass ? 'PASS' : 'FAIL'), summary.pass ? 'pass' : 'fail');
+  console.log('LOGIC_TEST ' + JSON.stringify(summary));
+} catch (err) {
+  log('ERROR: ' + (err && err.stack ? err.stack : err), 'fail');
+  console.log('LOGIC_TEST ' + JSON.stringify({ pass: false, error: String(err) }));
+}
+</script>
+</body>
+</html>
