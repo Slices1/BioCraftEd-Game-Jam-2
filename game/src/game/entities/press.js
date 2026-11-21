@@ -47,13 +47,14 @@ export class Press extends Entity {
   draw(ctx, t, w) {
     // console
     const cx = this.console.x, cy = this.console.y, live = w.ctrl.jack === this.id;
-    box(ctx, cx + 0.25, cy + 0.25, 0, 0.5, 0.5, 0.45, METAL);
+    const [csx, csy] = P(cx + 0.5, cy + 0.5, 0);
+    if (!sprites.draw(ctx, live ? 'crane_console_on' : 'crane_console', null, csx, csy + 12, 46)) box(ctx, cx + 0.25, cy + 0.25, 0, 0.5, 0.5, 0.45, METAL);
     glow(ctx, cx + 0.5, cy + 0.5, 0.5, 3, live ? C.cyan : C.amber);
     // gantry + head over zone
     const xs = this.zone.map((z) => z[0]), ys = this.zone.map((z) => z[1]);
     const x0 = Math.min(...xs), x1 = Math.max(...xs) + 1, y0 = Math.min(...ys), y1 = Math.max(...ys) + 1;
     const [sx, sy] = P((x0 + x1) / 2, (y0 + y1) / 2, 3.2);
-    if (!sprites.draw(ctx, 'press', null, sx, sy + 110, 140)) {
+    if (!sprites.draw(ctx, this.slam > 0 || this.pilot ? 'press_on' : 'press_off', null, sx, sy + 110, 140)) {
       box(ctx, x0 - 0.1, y0 - 0.1, 0, 0.2, 0.2, 3.3, METAL);
       box(ctx, x1 - 0.1, y1 - 0.1, 0, 0.2, 0.2, 3.3, METAL);
       box(ctx, x0 - 0.1, y0 - 0.1, 3.1, x1 - x0 + 0.2, y1 - y0 + 0.2, 0.35, METAL);

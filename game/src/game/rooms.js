@@ -1,10 +1,10 @@
 // Room chain as data. Map legend: '#' tall wall (z2)  '.' floor  '-' raised platform (z1)  'o' pit  'v' vent (crow only).
-// Rooms sit side by side on one world grid at (ox, oy). Entity `at` = tile coords inside the room; ids are global.
+// Rooms sit side by side on one world grid at (ox, oy); neighbouring rooms SHARE their wall column (ox advances by w-1), doors sit in it. Entity `at` = tile coords inside the room; ids are global.
 // Intended solutions (see also DESIGN.md):
 //  1 Plate & Door: pilot suit A onto plate P1 -> door D1 opens -> B to exit, crow flies east through D1.
 //  2 The Stick:    fly through the vent into the closet, take the stick, ACT at the cog slot -> D1 locked open;
 //                  fly back, jack into suit A, walk it east. Suit B waits here.
-//  3 Two Suits:    suit A parks on P3 (bridge rises over the pit), crow swaps to suit B, crosses, jacks the
+//  3 Two Suits:    suit A parks on P3 (a bridge deck slides out across the chasm), crow swaps to suit B, crosses, jacks the
 //                  press console, slams: cracked wall breaks + scrap becomes a crate; push the crate east.
 //  4 Magnet:       push the crate into row 5, suit jacks the crane console, grab crate, drop it on plate P4
 //                  (raised) -> elevator E4 cycles; unjack, ride E4 up, walk east on the platform.
@@ -40,7 +40,7 @@ export const ROOMS = [
     ],
   },
   {
-    id: 'r2', name: 'THE STICK', ox: 12, oy: 0, spawn: [1.5, 5.5],
+    id: 'r2', name: 'THE STICK', ox: 11, oy: 0, spawn: [1.5, 5.5],
     hint: 'Crows fit through vents. Sticks jam cogs.',
     map: [
       '############',
@@ -63,7 +63,7 @@ export const ROOMS = [
     ],
   },
   {
-    id: 'r3', name: 'TWO SUITS', ox: 24, oy: 0, spawn: [1.5, 5.5],
+    id: 'r3', name: 'TWO SUITS', ox: 22, oy: 0, spawn: [1.5, 5.5],
     hint: 'Parked suits keep working.',
     map: [
       '############',
@@ -80,7 +80,7 @@ export const ROOMS = [
     ],
     ents: [
       { type: 'plate', id: 'P3', at: [3, 7] },
-      { type: 'lift', id: 'BR3', at: [6, 5], off: -1, on: 0, mode: 'hold', inputs: ['P3'] },
+      { type: 'bridge', id: 'BR3', at: [6, 5], inputs: ['P3'] },
       { type: 'cracked', id: 'CW3', at: [11, 5] },
       { type: 'crate', id: 'CR3', at: [10, 5], hidden: true },
       { type: 'scrap', id: 'SC3', at: [10, 5], crate: 'CR3' },
@@ -88,7 +88,7 @@ export const ROOMS = [
     ],
   },
   {
-    id: 'r4', name: 'MAGNET', ox: 36, oy: 0, spawn: [1.5, 6.5],
+    id: 'r4', name: 'MAGNET', ox: 33, oy: 0, spawn: [1.5, 6.5],
     hint: 'The crane can lift anything metal — except the suit driving it.',
     map: [
       '############',
@@ -110,7 +110,7 @@ export const ROOMS = [
     ],
   },
   {
-    id: 'r5', name: 'LASER', ox: 48, oy: 0, spawn: [2.5, 6.5],
+    id: 'r5', name: 'LASER', ox: 44, oy: 0, spawn: [2.5, 6.5],
     hint: 'Beams stop at metal. Crows do not.',
     map: [
       '#####.######',
@@ -139,7 +139,7 @@ export const ROOMS = [
     ],
   },
   {
-    id: 'r6', name: 'THE GREAT SHINY', ox: 48, oy: -14, spawn: [5.5, 12.5],
+    id: 'r6', name: 'THE GREAT SHINY', ox: 44, oy: -14, spawn: [5.5, 12.5],
     hint: 'Everything here moves to the beat.',
     map: [
       '############',

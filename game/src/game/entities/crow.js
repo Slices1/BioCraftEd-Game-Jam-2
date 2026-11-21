@@ -1,7 +1,7 @@
 import { Body } from './base.js';
 import { move } from '../physics.js';
 import { P, shadow, glow, poly, facing, C } from '../iso.js';
-import { sprites } from '../sprites.js';
+import { sprites, dir8 } from '../sprites.js';
 
 export class Crow extends Body {
   constructor(def) {
@@ -15,6 +15,7 @@ export class Crow extends Body {
     this.vy += (my * sp - this.vy) * Math.min(1, dt * 10);
     move(w, this, this.vx * dt, this.vy * dt);
     this.face = facing(this.vx, this.vy, this.face);
+    if (Math.hypot(this.vx, this.vy) > 0.3) this.dir = dir8(this.vx, this.vy, this.dir);
     const moving = Math.hypot(mx, my) > 0.2;
     this.flapT -= dt;
     if (moving && this.flapT <= 0) { this.flapT = 0.32; w.sfx('flap', { volume: 0.4, pitchVar: 0.1 }); }
@@ -29,7 +30,11 @@ export class Crow extends Body {
     const gz = Math.max(0, this.groundZ || 0);
     shadow(ctx, this.x, this.y, gz, 14 - (this.z - gz) * 2, 0.4);
     const [sx, sy] = P(this.x, this.y, this.z);
-    if (sprites.draw(ctx, 'crow', this.face, sx, sy + 10, 52)) return this.drawCarry(ctx, sx, sy, this.face[1] === 'w' ? -1 : 1);
+    const d = this.dir || this.face, sp8 = Math.hypot(this.vx, this.vy);
+    const fr = Math.floor(t * (sp8 > 0.3 ? 9 : 4)) % 2 ? 'crow_flyb' : 'crow_flya';
+    const side = d !== 'n' && d !== 's';
+    if (this.carry && side && sprites.drawDir(ctx, 'crow_stick', d, sx, sy + 8, 62)) return;
+    if (sprites.drawDir(ctx, fr, d, sx, sy + 8, 58)) return this.drawCarry(ctx, sx, sy, d.includes('w') ? -1 : 1);
     const flip = this.face[1] === 'w' ? -1 : 1, back = this.face[0] === 'n';
     const sp = Math.hypot(this.vx, this.vy), rate = 14 + sp * 3, ph = t * rate;
     const flap = Math.sin(ph), tilt = Math.min(0.25, sp * 0.05);

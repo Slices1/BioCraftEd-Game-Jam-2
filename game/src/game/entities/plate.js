@@ -17,7 +17,7 @@ export class Plate extends Entity {
     this._flash = Math.max(0, (this._flash || 0) - 0.04);
     const z = this.base + (this.on ? 0.0 : 0.07);
     const [sx, sy] = P(this.x + 0.5, this.y + 0.5, z);
-    if (sprites.draw(ctx, 'plate', null, sx, sy + 12, 56)) return;
+    if (sprites.draw(ctx, this.on ? 'plate_on' : 'plate', null, sx, sy + 14, 60)) return;
     const col = this.on ? C.green : C.amber;
     tileTop(ctx, this.x + 0.08, this.y + 0.08, this.base, '#151411', null, 0.84);
     if (!this.on) box(ctx, this.x + 0.12, this.y + 0.12, this.base, 0.76, 0.76, 0.07, { top: '#4f4b40', left: '#26241f', right: '#34322b', edge: 'rgba(0,0,0,.5)' });

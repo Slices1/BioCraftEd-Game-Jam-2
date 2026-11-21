@@ -26,7 +26,7 @@ export class CogGate extends Entity {
     const crow = w && w.crow, near = crow && crow.carry && !this.jammed && Math.hypot(this.slot.x - crow.x, this.slot.y - crow.y) < 2.6;
     // drive shaft + housing on the wall
     ctx.fillStyle = '#1e1d1a'; ctx.fillRect(sx - 5, sy + 30, 10, 46); ctx.fillStyle = 'rgba(120,70,35,.5)'; ctx.fillRect(sx - 5, sy + 50, 10, 6);
-    if (!sprites.draw(ctx, 'cog', null, sx, sy + 60, 120)) {
+    if (!sprites.draw(ctx, this.jammed ? 'cog_jammed' : 'cog_empty', null, sx, sy + 60, 120, this.axis === 'y')) {
       ctx.save(); ctx.translate(sx, sy); ctx.scale(1, 0.9); ctx.rotate(this.ang);
       const n = 14, g = ctx.createRadialGradient(-10, -10, 4, 0, 0, 56); g.addColorStop(0, '#7a766a'); g.addColorStop(0.6, '#4b483f'); g.addColorStop(1, '#2a2824');
       ctx.fillStyle = g; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 2.5; ctx.beginPath();

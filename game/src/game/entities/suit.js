@@ -1,7 +1,7 @@
 import { Body } from './base.js';
 import { move, settle } from '../physics.js';
 import { P, box, shadow, glow, facing, C, METAL } from '../iso.js';
-import { sprites } from '../sprites.js';
+import { sprites, dir8 } from '../sprites.js';
 
 const SUIT = { top: '#4a5260', left: '#232831', right: '#333a46', edge: 'rgba(0,0,0,0.6)' };
 export class Suit extends Body {
@@ -14,6 +14,7 @@ export class Suit extends Body {
     this.vx = mx * sp; this.vy = my * sp;
     const moved = move(w, this, this.vx * dt, this.vy * dt);
     this.face = facing(this.vx, this.vy, this.face);
+    if (Math.hypot(mx, my) > 0.2) this.dir = dir8(this.vx, this.vy, this.dir);
     if (moved && Math.hypot(mx, my) > 0.2) {
       this.walkT += dt; this.stepT -= dt;
       if (this.stepT <= 0) { this.stepT = 0.38; w.sfx('step', { volume: 0.55, pitchVar: 0.12 }); }
@@ -27,7 +28,12 @@ export class Suit extends Body {
     const [sx, sy] = P(this.x, this.y, z);
     const jackM = w.ctrl.jack && w.get(w.ctrl.jack), jacked = jackM && jackM.pilot === this.id;
     if (jacked) drawCable(ctx, t, sx, sy, jackM);
-    if (!sprites.draw(ctx, 'suit', this.face, sx, sy + 6, 96)) drawMech(ctx, t, sx, sy, this, piloted, jacked);
+    const d = this.dir || this.face, walking = piloted && Math.hypot(this.vx, this.vy) > 0.2;
+    let ok;
+    if (!piloted && !jacked) ok = sprites.drawH(ctx, 'suit_off', sx, sy + 6, 92, d.includes('w'));
+    else if (walking && Math.floor(this.walkT * 6) % 2 && (d === 'e' || d === 'w' || d === 'se' || d === 'sw')) ok = sprites.drawH(ctx, 'suit_walk_a', sx, sy + 6, 92, d.includes('w'));
+    else ok = sprites.drawDir(ctx, 'suit', d, sx, sy + 6 - (walking ? Math.abs(Math.sin(this.walkT * 10)) * 2 : 0), 92);
+    if (!ok) drawMech(ctx, t, sx, sy, this, piloted, jacked);
     if (this.carried && !piloted) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.25 + 0.15 * Math.sin(t * 3);
       ctx.strokeStyle = C.cyan; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(sx, sy, 26, 13, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }
   }

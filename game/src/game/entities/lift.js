@@ -1,8 +1,9 @@
+import { sprites } from '../sprites.js';
 // Lift tile: its height level switches between `off` and `on` levels.
 // mode 'hold': powered -> on level, else off level (won't drop to a pit while something stands on it).
 // mode 'cycle': while powered, alternates off/on every `period` s (carries riders); unpowered it stays.
 import { Entity } from './base.js';
-import { box, glow, tileTop, C } from '../iso.js';
+import { P, box, glow, tileTop, C } from '../iso.js';
 
 const PLAT = { top: '#4b5563', left: '#22272f', right: '#2f3540', edge: 'rgba(0,0,0,0.6)' };
 export class Lift extends Entity {
@@ -33,6 +34,8 @@ export class Lift extends Entity {
     if (this.offL < 0) tileTop(ctx, this.x, this.y, -1, '#050608');
     const h = this.vis - bottom;
     if (h > 0.05) box(ctx, this.x + 0.03, this.y + 0.03, bottom, 0.94, 0.94, h - 0.02, { top: '#1b1f26', left: '#14171c', right: '#181b21' });
+    const [lx, ly] = P(this.x + 0.5, this.y + 0.5, Math.max(0, bottom));
+    if (sprites.draw(ctx, this.vis > (this.offL + this.onL) / 2 ? 'lift_high' : 'lift_low', null, lx, ly + 22, 66)) return;
     box(ctx, this.x + 0.03, this.y + 0.03, this.vis - 0.12, 0.94, 0.94, 0.12, PLAT);
     const col = this.on ? C.cyan : '#2a4a50';
     ctx.save(); ctx.shadowColor = col; ctx.shadowBlur = this.on ? 10 : 0;

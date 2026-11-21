@@ -9,14 +9,16 @@ import numpy as np
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 RAW, OUT = ROOT / 'assets/raw', ROOT / 'assets/img'
 OUT.mkdir(parents=True, exist_ok=True)
-MAXH = 256  # max piece height in px (game scales further)
+MAXH = 256
+MINPX = {'overgrowth': 4000, 'suit_states': 4000}
+DIL = {'overgrowth': 1, 'suit_states': 1}  # max piece height in px (game scales further)
 
 def key(img):
     a = np.asarray(img.convert('RGB')).astype(np.int32)
     r, g, b = a[..., 0], a[..., 1], a[..., 2]
     mag = (r - g) + (b - g)                      # high for magenta
     alpha = np.clip(255 - (mag - 180) * 255 // 140, 0, 255)  # 180..320 fade
-    alpha[(r > 200) & (b > 200) & (g < 90)] = 0
+    alpha[(r > 170) & (b > 150) & (g < 110) & (np.minimum(r, b) - g > 90)] = 0
     # despill: pull magenta tint out of edge pixels
     spill = np.clip(np.minimum(r, b) - g, 0, None)
     edge = alpha < 255
@@ -41,19 +43,37 @@ def slice_sheet(path):
         c = l + (c - l) * 0.35; c[..., 2] *= 1.06; c[..., 0] *= 0.96
         rgba[..., :3] = np.clip(c, 0, 255).astype(np.uint8)
     solid = rgba[..., 3] > 40
+    from scipy import ndimage
+    grown = ndimage.binary_dilation(ndimage.binary_opening(solid, iterations=2), iterations=DIL.get(path.stem, 6))
+    if path.stem == 'title_logo': grown = ndimage.binary_dilation(solid, iterations=60)
+    lab, n = ndimage.label(grown)
+    boxes = []
+    for i, sl in enumerate(ndimage.find_objects(lab), 1):
+        if sl is None: continue
+        if (solid[sl] & (lab[sl] == i)).sum() < MINPX.get(path.stem, 1500): continue
+        boxes.append((sl[1].start, sl[0].start, sl[1].stop, sl[0].stop))
+    # merge boxes fully/mostly contained in another (detached bits)
+    def inside(a, b):
+        ix = max(0, min(a[2], b[2]) - max(a[0], b[0])); iy = max(0, min(a[3], b[3]) - max(a[1], b[1]))
+        return ix * iy > 0.6 * (a[2] - a[0]) * (a[3] - a[1])
+    boxes.sort(key=lambda b: -(b[2] - b[0]) * (b[3] - b[1]))
     pieces = []
-    for y0, y1 in runs(solid.any(1), 12):
-        band = solid[y0:y1]
-        for x0, x1 in runs(band.any(0), 10):
-            sub = solid[y0:y1, x0:x1]
-            ys = np.where(sub.any(1))[0]
-            if sub.sum() < 400: continue  # specks
-            pieces.append((x0, y0 + ys[0], x1, y0 + ys[-1] + 1))
+    for b in boxes:
+        for j, p in enumerate(pieces):
+            if inside(b, p): pieces[j] = (min(p[0], b[0]), min(p[1], b[1]), max(p[2], b[2]), max(p[3], b[3])); break
+        else: pieces.append(b)
+    rowh = max(1, np.median([p[3] - p[1] for p in pieces]) if pieces else 1)
+    pieces.sort(key=lambda p: (round(((p[1] + p[3]) / 2) / rowh), p[0]))
+    for p in pieces: rgba[p[1]:p[3], p[0]:p[2]]  # noqa
+    from scipy import ndimage
     res = []
     for n, (x0, y0, x1, y1) in enumerate(pieces):
-        im = Image.fromarray(rgba[y0:y1, x0:x1], 'RGBA')
-        if im.height > MAXH:
-            im = im.resize((max(1, round(im.width * MAXH / im.height)), MAXH), Image.LANCZOS)
+        sub = rgba[y0:y1, x0:x1].copy(); sub[..., 3] *= (ndimage.binary_dilation(solid[y0:y1, x0:x1], iterations=2))
+        im = Image.fromarray(sub, 'RGBA')
+        bb = im.getbbox(); im = im.crop(bb) if bb else im
+        mh = 512 if path.stem == 'title_logo' else MAXH
+        if im.height > mh:
+            im = im.resize((max(1, round(im.width * mh / im.height)), mh), Image.LANCZOS)
         name = f'{path.stem}_{n}.png'
         im.save(OUT / name, optimize=True)
         res.append({'file': name, 'w': im.width, 'h': im.height})

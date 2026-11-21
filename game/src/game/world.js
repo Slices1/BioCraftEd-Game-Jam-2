@@ -16,12 +16,14 @@ import { MagnetCrane } from './entities/magnetCrane.js';
 import { Emitter, Receiver } from './entities/laser.js';
 import { Lift } from './entities/lift.js';
 import { Vent } from './entities/vent.js';
+import { Bridge } from './entities/bridge.js';
 import { Shiny } from './entities/shiny.js';
+import { Deco } from './entities/deco.js';
 import { Shutter, Piston, Checkpoint } from './entities/shutter.js';
 
 const TYPES = { crow: Crow, suit: Suit, plate: Plate, door: Door, cog: CogGate, stick: Stick, press: Press, cracked: CrackedWall,
-  scrap: ScrapPile, crate: Crate, crane: MagnetCrane, emitter: Emitter, receiver: Receiver, lift: Lift, vent: Vent, shiny: Shiny,
-  shutter: Shutter, piston: Piston, cp: Checkpoint };
+  scrap: ScrapPile, crate: Crate, crane: MagnetCrane, emitter: Emitter, receiver: Receiver, lift: Lift, vent: Vent, bridge: Bridge, shiny: Shiny,
+  shutter: Shutter, piston: Piston, cp: Checkpoint, deco: Deco };
 const K = (x, y) => x * 65536 + y + 32768;
 
 export function createWorld(game) {
@@ -55,6 +57,24 @@ export function createWorld(game) {
       if (d.zone) def.zone = d.zone.map(([a, b]) => [r.ox + a, r.oy + b]);
       if (d.x0 != null) { def.x0 = r.ox + d.x0; def.x1 = r.ox + d.x1; }
       add(def);
+    }
+  });
+  // decorative scatter: floor tiles hugging a wall, away from puzzle entities (heavier in rooms 2 & 4)
+  const OVERGROW = ['deco_ivy', 'deco_moss', 'deco_mushrooms', 'deco_plant', 'deco_log', 'deco_tree'], JUNK = ['deco_barrel', 'deco_lamp', 'deco_console', 'deco_arm', 'deco_rock', 'deco_slab'];
+  const busy = new Set(w.entities.flatMap((e) => [K(Math.floor(e.x), Math.floor(e.y)), ...(e.console ? [K(e.console.x, e.console.y)] : []), ...(e.zone || []).map(([a, b]) => K(a, b))]));
+  w.rooms.forEach((room, i) => {
+    const heavy = i === 1 || i === 3, want = heavy ? 9 : 3, cand = [];
+    for (let ty = 1; ty < room.h - 1; ty++) for (let tx = 1; tx < room.w - 1; tx++) {
+      const X = room.ox + tx, Y = room.oy + ty, t = w.base.get(K(X, Y));
+      if (!t || t.h !== 0 || t.vent || busy.has(K(X, Y))) continue;
+      const bh = (a, b) => { const q = w.base.get(K(a, b)); return q ? q.h : 3; }, wl = bh(X - 1, Y) >= 2, wu = bh(X, Y - 1) >= 2;
+      if (wl || wu) cand.push([X, Y, wl, wu]);
+    }
+    let seed = i * 7919 + 13; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let n = 0; n < want && cand.length; n++) {
+      const [X, Y, wl, wu] = cand.splice(Math.floor(rnd() * cand.length), 1)[0];
+      const pool = heavy || rnd() < 0.5 ? OVERGROW : JUNK, spr = pool[Math.floor(rnd() * pool.length)];
+      add({ type: 'deco', id: `deco${i}_${n}`, room: i, x: X, y: Y, spr, flip: rnd() < 0.5, ox: wl ? 0.3 : 0.5, oy: wu ? 0.3 : 0.5 });
     }
   });
   const r0 = w.rooms[0];

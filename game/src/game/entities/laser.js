@@ -1,3 +1,4 @@
+import { sprites } from '../sprites.js';
 // Laser emitter -> receiver. Beam runs along a grid row/column at z≈1 from the emitter in `dir`,
 // stops at the first tall tile or suit/crate; lit receiver turns `on` (doors/lifts list it as input). Kills the crow.
 import { Entity } from './base.js';
@@ -31,6 +32,8 @@ export class Emitter extends Entity {
   }
   get depth() { return this.x + this.y + 1; }
   draw(ctx, t) {
+    const [sx, sy] = P(this.x + 0.5, this.y + 0.5, 0);
+    if (sprites.draw(ctx, 'emitter', null, sx, sy + 12, 46, this.dir[1] > 0 || this.dir[0] < 0)) return;
     box(ctx, this.x + 0.2, this.y + 0.2, 0, 0.6, 0.6, 1.15, METAL);
     glow(ctx, this.x + 0.5 + this.dir[0] * 0.3, this.y + 0.5 + this.dir[1] * 0.3, 1, 4, C.red);
   }
@@ -56,6 +59,8 @@ export class Emitter extends Entity {
 export class Receiver extends Entity {
   get depth() { return this.x + this.y + 1; }
   draw(ctx) {
+    const [sx, sy] = P(this.x + 0.5, this.y + 0.5, 0);
+    if (sprites.draw(ctx, this.on ? 'receiver_on' : 'receiver', null, sx, sy + 12, 46)) return;
     box(ctx, this.x + 0.2, this.y + 0.2, 0, 0.6, 0.6, 1.15, METAL);
     glow(ctx, this.x + 0.5, this.y + 0.5, 1, 4.5, this.on ? C.green : '#402028');
   }

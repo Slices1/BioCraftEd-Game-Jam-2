@@ -48,6 +48,17 @@ export function playScene(game) {
     if (env && envOk && env.drawRaised) { envOk = safe(() => env.drawRaised(ctxRef, sx, sy, h, t, tx * 13 + ty * 7)); if (envOk) return; }
     box(ctxRef, tx, ty, 0, 1, 1, h, h >= 1.5 ? DARK : METAL);
   }
+  // chasm: visible inner cliff faces (west + north pit walls, 1 level deep) plus hazard-striped lips
+  function chasm(tx, ty, items) {
+    const c = ctxRef, solid = (x, y) => { const h = w.baseHeight(x, y); return h >= 0 && h < 2; };
+    const face = (pts, z0) => { const [a, b] = [P(pts[0][0], pts[0][1], 0), P(pts[0][0], pts[0][1], -1)]; const g = c.createLinearGradient(0, a[1], 0, b[1]); g.addColorStop(0, '#3b362c'); g.addColorStop(1, '#040405'); poly(c, pts.map(([x, y, z]) => P(x, y, z)), g, 'rgba(0,0,0,.7)'); };
+    if (solid(tx - 1, ty)) face([[tx, ty, 0], [tx, ty + 1, 0], [tx, ty + 1, -1], [tx, ty, -1]]);
+    if (solid(tx, ty - 1)) face([[tx, ty, 0], [tx + 1, ty, 0], [tx + 1, ty, -1], [tx, ty, -1]]);
+    const stripe = (x0, y0, ux, uy, vx, vy) => { for (let i = 0; i < 6; i++) { const a = i / 6, b = (i + 1) / 6; poly(c, [P(x0 + ux * a, y0 + uy * a, 0.01), P(x0 + ux * b, y0 + uy * b, 0.01), P(x0 + ux * b + vx, y0 + uy * b + vy, 0.01), P(x0 + ux * a + vx, y0 + uy * a + vy, 0.01)], i % 2 ? '#15130e' : '#d9a62a'); } };
+    const lip = (cond, x0, y0, ux, uy, vx, vy) => { if (cond) items.push({ d: tx + ty - 0.4, z: 0, f: () => stripe(x0, y0, ux, uy, vx, vy) }); };
+    lip(solid(tx - 1, ty), tx - 0.12, ty, 0, 1, 0.12, 0); lip(solid(tx + 1, ty), tx + 1, ty, 0, 1, 0.12, 0);
+    lip(solid(tx, ty - 1), tx, ty - 0.12, 1, 0, 0, 0.12); lip(solid(tx, ty + 1), tx, ty + 1, 1, 0, 0, 0.12);
+  }
   let ctxRef = null;
   function envSafe(fn) { if (envOk) envOk = safe(fn); }
 
@@ -111,11 +122,12 @@ export function playScene(game) {
         const border = ty === r.oy || tx === r.ox || ty === r.oy + r.h - 1 || tx === r.ox + r.w - 1;
         if (bh <= 0 || w.isVent(tx, ty)) {
           floor(sx, sy, bh < 0 ? 'pit' : w.isVent(tx, ty) ? 'grate' : 'floor', tx, ty);
+          if (bh < 0) chasm(tx, ty, items);
           const d = dec.floor.get(tx * 1000 + ty);
           if (d && env && env.drawOvergrowth) envSafe(() => env.drawOvergrowth(ctx, sx, sy, d, seed, t));
           if (env && envOk && env.drawWall) {
-            if (ty - 1 === r.oy && w.baseHeight(tx, ty - 1) >= 2) { envSafe(() => env.drawWall(ctx, sx, sy, WH, 'n', t, seed)); if (dec.vine(tx, ty, 'n')) envSafe(() => env.drawOvergrowth(ctx, sx, sy, 'vines_n', seed, t, WH * 32)); }
-            if (tx - 1 === r.ox && w.baseHeight(tx - 1, ty) >= 2) { envSafe(() => env.drawWall(ctx, sx, sy, WH, 'w', t, seed + 5)); if (dec.vine(tx, ty, 'w')) envSafe(() => env.drawOvergrowth(ctx, sx, sy, 'vines_w', seed + 3, t, WH * 32)); }
+            if (ty - 1 === r.oy && w.baseHeight(tx, ty - 1) >= 2) items.push({ d: tx + ty - 0.5, z: 0, f: () => { envSafe(() => env.drawWall(ctx, sx, sy, WH, 'n', t, seed)); if (dec.vine(tx, ty, 'n')) envSafe(() => env.drawOvergrowth(ctx, sx, sy, 'vines_n', seed, t, WH * 32)); } });
+            if (tx - 1 === r.ox && w.baseHeight(tx - 1, ty) >= 2) items.push({ d: tx + ty - 0.5, z: 0, f: () => { envSafe(() => env.drawWall(ctx, sx, sy, WH, 'w', t, seed + 5)); if (dec.vine(tx, ty, 'w')) envSafe(() => env.drawOvergrowth(ctx, sx, sy, 'vines_w', seed + 3, t, WH * 32)); } });
             if (ty + 1 === r.oy + r.h - 1 && w.baseHeight(tx, ty + 1) >= 2) items.push({ d: tx + ty + 1.95, z: 0, f: () => envSafe(() => env.drawWall(ctx, sx, sy, 1, 'stub', t, seed)) });
             if (tx + 1 === r.ox + r.w - 1 && w.baseHeight(tx + 1, ty) >= 2) items.push({ d: tx + ty + 1.95, z: 0, f: () => envSafe(() => env.drawWall(ctx, sx, sy, 1, 'stubR', t, seed)) });
           }

@@ -8,6 +8,8 @@ export class CrackedWall extends Entity {
   tiles() { return this.broken ? null : [[this.x, this.y, 2]]; }
   draw(ctx) {
     if (this.broken) {
+      const [rx, ry] = P(this.x + 0.5, this.y + 0.5, 0);
+      if (sprites.draw(ctx, 'rubble', null, rx, ry + 14, 62)) return;
       for (let i = 0; i < 5; i++) box(ctx, this.x + 0.15 + (i * 0.37) % 0.7, this.y + 0.1 + (i * 0.53) % 0.7, 0, 0.18, 0.18, 0.12, CW);
       return;
     }
