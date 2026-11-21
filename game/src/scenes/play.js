@@ -144,6 +144,8 @@ export function playScene(game) {
     return { x: Math.floor(tmpV.x), z: Math.floor(tmpV.z) };
   }
 
+  // ?debug test hook: window.__play.step({type:'move',dir:'N'}) drives the real scene (used for automated playthroughs).
+  if (game.debug) window.__play = { step: (a) => doStep(a), state: () => state, busy: () => !!(rv && rv.busy()), room: () => roomIdx };
   function doStep(action) {
     let changed = false;
     try { changed = step(state, action); } catch (e) { console.error('[play] step failed', e); }

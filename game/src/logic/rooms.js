@@ -105,8 +105,9 @@ export const ROOMS = [
       { type: 'plate', id: 'P5', at: [2, 5] },
       { type: 'door', id: 'D5', at: [5, 6], inputs: ['P5'], mode: 'any', dir: 'x' },
       { type: 'checkpoint', id: 'CP1', at: [6, 6] },
-      { type: 'piston', id: 'PA', at: [7, 6], beat: [1, 2], phase: 0 },
-      { type: 'piston', id: 'PB', at: [7, 4], beat: [1, 2], phase: 1 },
+      // 2 beats down, 2 up (~0.69 s windows at 174 BPM): long enough to step on and off between slams.
+      { type: 'piston', id: 'PA', at: [7, 6], beat: [2, 4], phase: 0 },
+      { type: 'piston', id: 'PB', at: [7, 4], beat: [2, 4], phase: 2 },
       { type: 'checkpoint', id: 'CP2', at: [7, 2] },
       { type: 'laser', id: 'L5', at: [4, 2], dir: 'N' }, // always on: only the parked mech can shield the crow
       { type: 'shiny', id: 'SH', at: [1, 1] },
