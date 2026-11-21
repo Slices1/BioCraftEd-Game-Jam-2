@@ -1,0 +1,25 @@
+{
+  "sfx": [
+    {"id":"ui_click","prompt":"short crisp UI button click, soft digital tick","duration":0.5,"variants":2},
+    {"id":"ui_confirm","prompt":"positive UI confirm chime, two quick rising notes, clean","duration":0.8,"variants":1},
+    {"id":"pickup","prompt":"retro arcade coin pickup, bright sparkly blip","duration":0.6,"variants":2},
+    {"id":"jump","prompt":"cartoon arcade jump, rising bouncy boing","duration":0.6,"variants":3},
+    {"id":"dash","prompt":"fast whoosh dash, airy swish with quick pitch drop","duration":0.6,"variants":2},
+    {"id":"hit","prompt":"punchy impact hit, short thud with crunch","duration":0.6,"variants":3},
+    {"id":"explode","prompt":"arcade explosion, deep boom with debris crackle, fast decay","duration":1.5,"variants":2},
+    {"id":"powerup","prompt":"magical power-up, fast ascending arpeggio shimmer","duration":1.2,"variants":1},
+    {"id":"lose","prompt":"sad descending game over jingle, short, 8-bit flavoured","duration":1.8,"variants":1},
+    {"id":"win","prompt":"triumphant short victory fanfare, bright synth brass, arcade","duration":2.0,"variants":1}
+  ],
+  "music": [
+    {"id":"dnb_level","length_s":90,"loop":true,"model":"music_v2_5",
+     "prompt":"Instrumental liquid drum and bass, 174 BPM, F minor, rolling amen-style breakbeat with crisp snares on 2 and 4, warm deep sub bass, lush atmospheric pads, plucky electric piano chords, soft arpeggiated synth, uplifting but driving, steady energy, strong 16-bar groove, intro and outro share the same drum pattern so it loops seamlessly, no vocals, no fade out"},
+    {"id":"dnb_neuro","length_s":90,"loop":true,"model":"music_v2_5",
+     "prompt":"Instrumental neurofunk drum and bass, 174 BPM, E minor, tight punchy kick and snare, rolling ghost-note breaks, growling reese bass with heavy modulation and resampled mid-bass, dark tense atmosphere, metallic percussion, riser-free steady loop, consistent energy, same pattern at start and end for a seamless loop, no vocals, no fade out"},
+    {"id":"menu","length_s":60,"loop":true,"model":"music_v2_5",
+     "prompt":"Calm instrumental ambient menu music, 90 BPM, soft pads, gentle plucks, light lo-fi beat, warm and inviting, loopable, no vocals, no fade out"}
+  ],
+  "voice": [
+    {"id":"intro","text":"Get ready. Here we go!","voice":"Rachel","model":"eleven_flash_v2_5"}
+  ]
+}

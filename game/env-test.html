@@ -1,0 +1,37 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}canvas{width:100%;height:100%;display:block}</style></head><body>
+<canvas id="c"></canvas>
+<script type="module">
+import {drawBackdrop,drawFloor,drawWall,drawRaised,drawProp} from './src/game/env.js';
+import {createBloom} from './src/game/bloom.js';
+const Q=new URLSearchParams(location.search),FIX=Q.has('t')?+Q.get('t'):null,CY=Q.has('cy')?+Q.get('cy'):null;
+const cv=document.getElementById('c'),ctx=cv.getContext('2d',{alpha:false}),bloom=createBloom({quality:2,enabled:Q.get("bloom")!=="0"});
+const NX=12,NY=10,hs=(i,j)=>((i*73856093)^(j*19349663))>>>0;
+const pit=new Set(['5,5','6,5','5,6']),raised=new Map([['8,3',1],['9,3',1],['8,4',2]]);
+const props={'2,2':'barrel','3,2':'barrel','1,5':'toolcart','4,8':'crate_small','5,8':'crate_small','10,7':'monitor','7,8':'cables','2,7':'scrap','1,1':'lamp','10,1':'pipe_stack','9,8':'lamp','6,2':'crate_small'};
+const grates=new Set(['3,5','3,6','4,5','4,6']),haz=new Set(['0,4','1,4','0,5','1,5','0,6','1,6']),plate='7,6';
+function room(t){
+ // painter order by diagonal
+ for(let d=0;d<NX+NY-1;d++)for(let i=0;i<NX;i++){const j=d-i;if(j<0||j>=NY)continue;
+  const sx=(i-j)*32,sy=(i+j)*16,k=i+','+j,s=hs(i,j);
+  if(!raised.has(k)){let kind=pit.has(k)?'pit':grates.has(k)?'grate':haz.has(k)?'hazard':k===plate?'plateBase':'floor';drawFloor(ctx,sx,sy,kind,t,s)}
+  if(j===0)drawWall(ctx,sx,sy,4,'n',t,s);
+  if(i===0)drawWall(ctx,sx,sy,4,'w',t,s>>3);
+  if(j===NY-1&&i>2&&i<9)drawWall(ctx,sx,sy,1,'stub',t,s);
+  if(i===NX-1&&j>1&&j<8)drawWall(ctx,sx,sy,1,'stubR',t,s);
+  if(raised.has(k))drawRaised(ctx,sx,sy,raised.get(k),t,s);
+  if(props[k])drawProp(ctx,sx,sy,props[k],t,s);
+ }}
+function frame(now){
+ const t=FIX!=null?FIX:now/1000,dpr=Math.min(devicePixelRatio||1,2);
+ const W=cv.width=Math.round(innerWidth*dpr),H=cv.height=Math.round(innerHeight*dpr);
+ ctx.setTransform(1,0,0,1,0,0);drawBackdrop(ctx,{w:W,h:H},t);
+ const rw=NX*32+NY*32+120,z=Math.max(.5,W/rw),roomH=(NX+NY)*16+150;
+ const cy=CY!=null?CY:(Math.sin(t*.4)*.5+.5)*Math.max(0,roomH-H/z);
+ ctx.setTransform(z,0,0,z,W/2-(NX-NY)*16*z,(150-cy)*z);
+ room(t);
+ ctx.setTransform(1,0,0,1,0,0);bloom.apply(ctx,cv);
+ if(FIX==null)requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>
