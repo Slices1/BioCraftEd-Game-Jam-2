@@ -39,10 +39,18 @@ export class Emitter extends Entity {
     const [dx, dy] = this.dir;
     const a = P(this.x + 0.5 + dx * 0.3, this.y + 0.5 + dy * 0.3, 1);
     const e = this.end, b = P(e[0] + 0.5 - dx * 0.5, e[1] + 0.5 - dy * 0.5, 1);
-    ctx.save(); ctx.globalCompositeOperation = 'lighter';
-    ctx.strokeStyle = 'rgba(255,40,80,0.35)'; ctx.lineWidth = 9 + Math.sin(t * 40) * 1.5;
-    ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
-    ctx.strokeStyle = '#ffd0d8'; ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+    const fl = 0.8 + 0.2 * Math.sin(t * 53) * Math.sin(t * 17);
+    ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round';
+    ctx.strokeStyle = `rgba(255,40,70,${0.16 * fl})`; ctx.lineWidth = 22; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+    ctx.strokeStyle = `rgba(255,60,90,${0.45 * fl})`; ctx.lineWidth = 7 + Math.sin(t * 40) * 1.5; ctx.stroke();
+    ctx.strokeStyle = '#ffe0e6'; ctx.lineWidth = 2; ctx.stroke();
+    for (let i = 0; i < 6; i++) { // hit-point sparks
+      const k = (t * 3 + i / 6) % 1, ang = i * 2.1 + Math.floor(t * 3 + i / 6) * 1.7;
+      ctx.fillStyle = `rgba(255,${180 + i * 10},150,${1 - k})`; ctx.fillRect(b[0] + Math.cos(ang) * 18 * k - 1.5, b[1] + Math.sin(ang) * 10 * k - k * k * 14 - 1.5, 3, 3);
+    }
+    const g = ctx.createRadialGradient(b[0], b[1], 0, b[0], b[1], 18 * fl); g.addColorStop(0, 'rgba(255,220,200,.9)'); g.addColorStop(1, 'rgba(255,40,70,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b[0], b[1], 18 * fl, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
   }
 }
 export class Receiver extends Entity {

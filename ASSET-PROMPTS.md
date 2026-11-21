@@ -1,55 +1,58 @@
-# Asset prompts for Gemini (ISOMETRIC version)
+# Asset prompts for Gemini (v3: isometric, hand-painted, abandoned + overgrown)
 
-**How to use:** paste the STYLE BLOCK, then one asset prompt, and ask for one image per prompt.
-Save each image as `game/assets/raw/<name>.png` using the name in **bold**. I'll remove the magenta background, trim, scale and wire it in.
-- The game only needs two facings: **SE** (facing down-right, toward the viewer) and **NE** (facing up-right, away from the viewer). The code mirrors them for SW and NW.
-- Floors and walls are drawn in code to fit the grid, so these prompts are for characters, machines and props only.
+**Workflow:** use ONE Gemini chat for everything so the style stays consistent. Send the STYLE BLOCK as the first message, generate **crow_turn** first, then for every following prompt add: *"Match the exact art style, line weight, palette and lighting of the crow image above."*
+Save as `game/assets/raw/<name>.png`.
 
----
-
-## STYLE BLOCK (paste before every prompt)
-> Game sprite for a 2D ISOMETRIC puzzle game (true 2:1 isometric projection, camera looking down at ~30°, like classic iso RPGs). Hand-painted illustrated style with visible confident linework and soft painterly shading, like a moody indie graphic-novel game (warm tungsten lamp light, cool teal shadows), set in a gritty ROBOTIC FACTORY. Weathered steel, chipped paint, rust, grime, cables, small glowing cyan (#3FE0FF) and amber (#FFB040) lights. Grounded, slightly stylised but NOT cute or chibi: realistic proportions, an adult tone. Background must be perfectly flat solid magenta #FF00FF with no floor, no shadows and no gradient on it (I will add shadows). No text, no watermark. Leave generous magenta space around each item; items must not touch.
-
----
+## STYLE BLOCK
+> I'm making sprites for a 2D isometric puzzle game set in an ABANDONED robotic factory slowly reclaimed by nature (moss, ivy, weeds, rust, puddles), with a mood like the game Stray. Art style: stylised HAND-PAINTED illustration, like painted indie-game concept art, with visible brush texture, soft painterly shading and confident dark linework. It should be stylised, not photorealistic and not cartoony or chibi. The palette is muted and slightly desaturated: rusty ochres, mossy greens and slate teal, with warm tungsten highlights and a few small glowing cyan or amber lights. Camera: classic isometric game view, looking DOWN at about 30 degrees. Every image must have a perfectly flat solid magenta (#FF00FF) background with no floor, no cast shadow and no gradient. No text. Keep lots of empty magenta space between items so that none of them touch.
 
 ## Characters
 
-**crow_fly**
-> A realistic black crow (Corvus), glossy black feathers with subtle blue-violet sheen and a sharp intelligent eye, seen in isometric view. A sprite sheet in 2 rows × 3 columns, all at identical scale: top row = flying facing SOUTH-EAST (toward the viewer, down-right) with wings UP / LEVEL / DOWN; bottom row = flying facing NORTH-EAST (away from the viewer, up-right) with wings UP / LEVEL / DOWN.
+**crow_turn**
+> A sprite TURNAROUND of one crow (a stylised but anatomically believable carrion crow: glossy black feathers with a subtle blue sheen, bright clever eye), seen from the isometric camera above, all at IDENTICAL size, in one row of 5. The WHOLE BODY rotates between the views, not just the head: (1) body pointing straight DOWN the image toward the viewer, (2) body pointing diagonally toward the BOTTOM-RIGHT corner of the image, (3) body pointing straight RIGHT in profile, (4) body pointing diagonally toward the TOP-RIGHT corner (back three-quarter view, mostly seeing its back), (5) body pointing straight UP the image, away from the viewer (seeing its back and tail). In every view, its tail points the opposite way to its beak. Standing pose.
 
-**crow_extra**
-> The same crow, identical scale, 4 poses in a row: (1) perched facing SE, (2) perched facing NE, (3) flying facing SE holding a thin wooden stick crosswise in its beak, (4) flying facing NE holding the stick.
+**crow_fly_a**
+> The same crow FLYING, same 5 body directions as before (down, down-right, right, up-right, up), wings UP (top of the wingbeat). One row of 5, identical size.
 
-**suit**
-> A compact two-legged industrial exo-frame mech, about 3× the crow's height. It's a machine, NOT a character: no face, no eyes, no head. A boxy torso with a small open glass cockpit cradle on top where a crow perches, a round cyan power core on the chest, hydraulic pistons, two chunky arms with clamp hands, hazard-striped plates, and a thick cable on its back ending in a glowing plug. Isometric sprite sheet, 2 rows × 3 columns, identical scale: top row facing SE = (1) powered OFF slumped with dark core, (2) idle ON with core glowing, (3) mid-step walking; bottom row = the same three states facing NE.
+**crow_fly_b**
+> The same crow FLYING, same 5 body directions, wings DOWN (bottom of the wingbeat). One row of 5, identical size.
 
-## Machines (isometric, one image each)
+**crow_stick**
+> The same crow flying with a thin twig held crosswise in its beak, in 3 body directions: down-right, right, up-right. Identical size.
+
+**suit_turn**
+> A compact two-legged industrial walker mech, about 3× the crow's height, old, scratched and rusty with a few moss patches. It's a MACHINE: no face, no head, no eyes. A boxy torso with an open cradle on top for a crow to perch in, a round cyan glow core on the chest, hydraulic legs and two clamp arms, plus a thick power cable on its back ending in a plug. A TURNAROUND in one row of 5 at identical size, where the WHOLE MACHINE rotates: front facing down, front facing the bottom-right corner, profile facing right, front facing the top-right corner (back three-quarter), and front facing up (back view). Powered ON.
+
+**suit_states**
+> The same mech, front facing the bottom-right corner, identical size, 4 versions: (1) powered OFF, slumped, dark core, (2) walking with the left leg forward, (3) walking with the right leg forward, (4) its back cable plugged in, glowing.
+
+## Machines and scene objects (all the same style; each fits about 1–2 floor tiles)
 
 **press**
-> A heavy industrial hydraulic press machine, isometric, occupying a 2×2 floor tile footprint: a steel frame, a big piston ram, gauges, warning stripes, and a glowing jack-in socket on its front. Two versions side by side at identical scale: left = DORMANT (ram raised, lights dim), right = ACTIVE (ram slammed down, amber lights lit, a little steam).
+> An old hydraulic press machine with rust, moss at its base and a glowing jack-in socket. Two versions: DORMANT (ram raised, lights dim) and ACTIVE (ram slammed down, amber lights on).
 
-**magnet_crane**
-> An isometric overhead magnet crane parts sheet at identical scale: (1) a steel ceiling-rail segment running diagonally (along the iso x-axis) that can tile end to end, (2) the trolley carriage that rides on it, (3) a heavy chain hanging straight down (tileable vertically), (4) a large circular electromagnet OFF (dark), (5) the same magnet ON (glowing cyan coils, crackling arcs), (6) a floor control console with a jack-in socket.
+**crane**
+> A rusty overhead magnet crane: (1) ceiling rail segment running diagonally toward the top-right, (2) trolley, (3) hanging chain, (4) round electromagnet OFF, (5) the same magnet ON with glowing cyan coils and small sparks, (6) its floor control console with a jack-in socket.
 
 **cog_gate**
-> An isometric wall-mounted mechanism: a HUGE, very obvious brass-and-steel cog wheel (about 2 tiles tall) mounted on the wall beside a heavy sliding gate. Sprite sheet at identical scale: (1) the cog alone with one clearly visible empty slot between two teeth, rimmed with amber paint, (2) the same cog with a wooden stick jammed into that slot, (3) the gate panel CLOSED, (4) the gate panel OPEN (raised up into its frame).
+> A HUGE brass cog wheel on a mossy wall next to a heavy sliding gate: (1) the cog with one clearly visible empty slot rimmed in amber paint, (2) the cog with a twig jammed in that slot, (3) the gate closed, (4) the gate open.
 
-**laser**
-> Isometric industrial laser security props at identical scale: (1) floor-standing laser emitter pylon with a magenta lens, facing SE, (2) the same facing NE, (3) a receiver pylon UNLIT, (4) the receiver LIT (glowing cyan).
+**puzzle_props**
+> (1) Laser emitter pylon with a magenta lens, (2) laser receiver pylon unlit, (3) the receiver lit cyan, (4) floor pressure plate up with an amber rim, (5) the plate pressed with a cyan glow, (6) a scissor-lift platform lowered, (7) the lift raised, (8) a blast door closed with a red light, (9) the door open with a green light.
 
-**door_plate_lift**
-> Isometric industrial puzzle props at identical scale: (1) a heavy sliding blast door in its frame, CLOSED, red light, set in a wall that runs along the iso x-axis, (2) the same door OPEN, green light, (3) a square floor pressure plate UP with an amber rim (fits one floor tile), (4) the same plate PRESSED with a cyan glowing rim, (5) a square scissor-lift platform LOWERED, (6) the same lift RAISED.
+**objects**
+> (1) A dented steel crate, (2) a pile of scrap, (3) a cracked concrete wall chunk, (4) that chunk as rubble, (5) a dry twig lying on the floor, (6) a wall vent grille, (7) an old computer console with a cracked, faintly glowing screen, (8) a rusty barrel with ivy, (9) a broken robot arm lying on the floor, (10) a potted plant gone wild, (11) a hanging work lamp, (12) a puddle reflecting light.
 
-**props**
-> Isometric factory props at identical scale, each fitting about one floor tile: (1) a heavy dented steel crate with stencil markings (no legible text), (2) a pile of scrap metal, (3) a cracked concrete-and-rebar wall chunk, (4) the same chunk SHATTERED into rubble, (5) a thin dry wooden twig/stick lying on the floor, (6) a wall vent grille (small and square, on a wall running along the iso y-axis).
+**overgrowth**
+> Nature-reclaiming-factory decoration pieces: (1) a hanging ivy curtain, (2) a moss patch, (3) weeds growing through a floor crack, (4) a small tree growing up through broken floor plates with dry twigs at its base, (5) vines wrapped around a pipe, (6) a cluster of small mushrooms.
 
 ## Story / UI
 
 **great_shiny**
-> A breathtaking glowing jewel artifact, the "Great Shiny": a large multifaceted crystal in an antique brass housing on a small pedestal, shimmering with prismatic cyan-gold-magenta light. Isometric view.
+> The "Great Shiny": a large multifaceted crystal in an antique brass housing on a small pedestal, shimmering with prismatic cyan, gold and magenta light.
 
-**cutscene_rooftop** (a full background image, so ignore the magenta rule)
-> Hand-painted illustrated establishing shot, night, rain, industrial city. A massive dark robotic factory tower in the centre; one high window glows with prismatic jewel light. In the foreground, a lone crow perched on a rooftop antenna faces the tower. Warm tungsten vs teal palette, moody, graphic-novel linework. 9:16 portrait composition with the subject in the centre third.
+**cutscene_rooftop** (a full background image, so no magenta)
+> Same hand-painted style. Night, light rain: an abandoned factory tower overgrown with ivy, with one high window glowing with prismatic jewel light. In the foreground, a crow perched on a bent rooftop antenna faces the tower. Portrait 9:16 composition.
 
 **title_logo**
-> Game logo text "CORVID" in a bold, sharp, hand-lettered display font like a horror-comedy game logo, deep crimson-red with a slight brushed-metal edge, one crow feather forming part of the V. Flat magenta #FF00FF background.
+> The game title "CORVID" hand-lettered in a sharp, slightly distressed crimson display font with a feather forming part of the V, on a flat magenta (#FF00FF) background.

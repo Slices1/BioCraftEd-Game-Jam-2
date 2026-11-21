@@ -1,0 +1,32 @@
+{
+ "sfx": [
+  {"id":"flap","prompt":"single crow wing flap, feathers whoosh, close-up foley, dry","duration":0.6,"variants":2},
+  {"id":"caw","prompt":"single short crow caw, raw and rough, outdoors at night, dry","duration":0.8,"variants":2},
+  {"id":"land","prompt":"small bird landing on a metal grating, soft claw tick and feather flutter","duration":0.6},
+  {"id":"step","prompt":"heavy robot mech footstep, hydraulic hiss and servo whine, metal foot thud on steel floor","duration":0.8,"variants":2},
+  {"id":"jack_in","prompt":"thick cable plugging into a socket with a heavy metallic click, then an electrical power-up surge rising with a hum","duration":1.6},
+  {"id":"jack_out","prompt":"large machine powering down with a long descending electrical whine and hum fading out, then a cable unplugging clunk","duration":1.2},
+  {"id":"press_slam","prompt":"huge industrial hydraulic press slamming down, massive metal impact and crunch, deep boom, steam hiss","duration":2.0},
+  {"id":"wall_break","prompt":"concrete wall breaking apart, rebar bending, rubble crumbling and falling, heavy debris","duration":2.2},
+  {"id":"crate_land","prompt":"heavy metal crate dropped onto a concrete floor, thud with rattle","duration":0.9},
+  {"id":"magnet_on","prompt":"industrial electromagnet switching on, low electrical hum starting with a metallic clunk","duration":1.2},
+  {"id":"magnet_drop","prompt":"heavy metal object released and dropped, loud metallic clank on steel","duration":0.8},
+  {"id":"laser_hum","prompt":"steady laser barrier hum, buzzing electric energy drone, low and menacing, steady continuous drone","duration":4},
+  {"id":"zap_death","prompt":"loud electric zap crackle with a crow squawk of pain, sudden shock","duration":1.2},
+  {"id":"plate_on","prompt":"heavy metal pressure plate clicking down, solid mechanical click and clunk","duration":0.6},
+  {"id":"door_open","prompt":"heavy steel blast door sliding open, motor grinding, metal scrape, pneumatic hiss","duration":2.2},
+  {"id":"cog_jam","prompt":"wooden stick jamming into a huge machine gear, wood crack and grinding metal screech, machinery shuddering to a halt","duration":2.0},
+  {"id":"stick_pick","prompt":"small wooden stick picked up, short wooden clack and rustle","duration":0.5},
+  {"id":"ui_click","prompt":"short dull mechanical switch click, industrial control panel button","duration":0.5,"variants":2},
+  {"id":"ui_confirm","prompt":"industrial console confirm, relay clunk followed by a low electronic beep","duration":0.8},
+  {"id":"win","prompt":"sparkling jewel shimmer, magical glittering chimes ascending, bright and precious","duration":2.5}
+ ],
+ "music": [
+  {"id":"menu","length_s":70,"loop":true,"model":"music_v2_5",
+   "prompt":"Dark ambient instrumental, slow, mysterious and melancholic, an abandoned industrial factory reclaimed by nature, distant metallic creaks, deep drones, sparse low piano notes, soft wind, faint water drips, cold reverberant atmosphere at night, loopable, same start and end, no vocals, no fade out"},
+  {"id":"factory","length_s":110,"loop":true,"model":"music_v2_5",
+   "prompt":"Melancholic ambient puzzle game music, abandoned overgrown factory reclaimed by nature, 85 BPM, gentle sparse plucks and soft pads, muted mechanical pulse like distant machinery, dripping water, wind through vines, faint birdsong, quiet, moody and unobtrusive, not distracting, loopable, same start and end, no vocals, no fade out"},
+  {"id":"dnb","length_s":110,"loop":true,"model":"music_v2_5",
+   "prompt":"High-energy neurofunk drum and bass, 174 BPM, rolling growling reese bass, tight amen breaks with crisp snares, industrial metallic textures, dark aggressive, driving and relentless, consistent energy, loopable, same pattern at start and end, no vocals, no fade out"}
+ ]
+}

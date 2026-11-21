@@ -65,4 +65,10 @@ export function move(w, b, dx, dy, depth = 0) {
   if (!b.flying) settle(w, b);
   return moved;
 }
-export function settle(w, b) { b.z = Math.max(0, w.heightAt(Math.floor(b.x), Math.floor(b.y))); }
+// z = highest tile under the footprint, so stepping DOWN a ledge never leaves the body 'sunk' half on the higher tile.
+export function settle(w, b) {
+  const x0 = Math.floor(b.x - b.hw), x1 = Math.floor(b.x + b.hw - EPS), y0 = Math.floor(b.y - b.hw), y1 = Math.floor(b.y + b.hw - EPS);
+  let z = 0;
+  for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) { const h = w.heightAt(tx, ty); if (h > z && h <= 1.01) z = h; }
+  b.z = z;
+}

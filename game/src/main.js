@@ -14,6 +14,10 @@ import { text } from './engine/ui.js';
 import { titleScene } from './scenes/title.js';
 import { playScene } from './scenes/play.js';
 import { gameoverScene } from './scenes/gameover.js';
+import { introScene } from './scenes/intro.js';
+import { endingScene } from './scenes/ending.js';
+import { registerSynthSfx } from './audio/sfxr.js';
+import { initSoundtrack } from './game/soundtrack.js';
 
 export const CONFIG = {
   id: 'corvid',                 // localStorage namespace: change per game
@@ -32,9 +36,23 @@ const SOUND_FILES = {
 };
 
 function setupAudio(audio) {
-  // AUDIO HOOK (src/audio/* is owned by the audio module), e.g.:
-  //   import { registerSynthSfx } from './audio/sfxr.js';  ->  registerSynthSfx(audio);
+  try { registerSynthSfx(audio); } catch (e) { console.warn('[audio] synth sfx failed', e); } // fallback, real files override
   audio.config('pickup', { pitchVar: 0.1 });
+  audio.config('step', { cooldown: 0.12 });
+  audio.config('flap', { cooldown: 0.1 });
+  let p = Promise.resolve();
+  try {
+    p = fetch('assets/audio-index.json').then((r) => (r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status))))
+      .then((idx) => {
+        const map = {};
+        for (const [id, v] of Object.entries(idx.ids || {})) {
+          const f = (x) => (idx.base || 'assets/') + x;
+          map[id] = Array.isArray(v) ? v.map(f) : f(v);
+        }
+        return audio.load(map);
+      }).catch((e) => { console.warn('[audio] index load failed', e); });
+  } catch (e) { /* ignore */ }
+  initSoundtrack(audio, p);
 }
 
 function bindDefaults(input) {
@@ -192,7 +210,7 @@ for (const t of ['gesturestart', 'gesturechange', 'gestureend']) document.addEve
 
 // ---- Boot ----------------------------------------------------------------------------------
 async function boot() {
-  game.scenes.add('title', titleScene).add('play', playScene).add('gameover', gameoverScene);
+  game.scenes.add('title', titleScene).add('play', playScene).add('gameover', gameoverScene).add('intro', introScene).add('ending', endingScene);
   try { setupAudio(audio); } catch (e) { console.error('[main] setupAudio failed', e); }
   const want = params.get('scene');
   game.scenes.go(want && game.scenes.has(want) ? want : CONFIG.firstScene, {}, { fade: params.has('autostart') ? 0 : 0.6 });

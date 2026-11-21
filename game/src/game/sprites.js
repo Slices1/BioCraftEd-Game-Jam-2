@@ -1,5 +1,5 @@
 // Optional sprites: assets/img/<name>.png (and <name>_se / _ne facing variants). Missing files are ignored.
-const NAMES = ['crow', 'suit', 'crate', 'stick', 'plate', 'door', 'cog', 'press', 'crane', 'magnet', 'emitter', 'receiver', 'lift', 'scrap', 'cracked', 'shiny', 'vent'];
+const NAMES = ['crow', 'suit', 'crate', 'stick', 'plate', 'door', 'cog', 'press', 'crane', 'magnet', 'emitter', 'receiver', 'lift', 'scrap', 'cracked', 'shiny', 'vent', 'title_logo', 'cutscene_rooftop'];
 const FACED = ['crow', 'suit'];
 const imgs = new Map();
 function load(name) {

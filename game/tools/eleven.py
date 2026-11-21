@@ -22,15 +22,16 @@ KINDS = {"sfx": "sfx", "music": "music", "voice": "voice"}
 
 
 def load_key():
-    k = os.environ.get("ELEVENLABS_API_KEY")
+    k = os.environ.get("ELEVENLABS_API_KEY") or os.environ.get("API_KEY")
     if k:
         return k.strip()
     p = os.path.join(HERE, ".env")
     if os.path.exists(p):
         for line in open(p, encoding="utf-8"):
             line = line.strip()
-            if line.startswith("ELEVENLABS_API_KEY="):
-                return line.split("=", 1)[1].strip().strip('"\'')
+            m = re.match(r"(?:export\s+)?(ELEVENLABS_API_KEY|API_KEY)\s*=\s*(.*)$", line)
+            if m:
+                return m.group(2).strip().strip('"\'')
     return None
 
 

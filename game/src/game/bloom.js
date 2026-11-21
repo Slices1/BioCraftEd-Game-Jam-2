@@ -74,7 +74,7 @@ export function createBloom(opts) {
     const w1 = B1.width, h1 = B1.height;
 
     if (useFilter) {
-      b1.filter = 'contrast(2.6) brightness(1.0)'; b1.globalCompositeOperation = 'copy';
+      b1.filter = 'brightness(0.75) contrast(4.2)'; b1.globalCompositeOperation = 'copy';
       b1.drawImage(canvas, 0, 0, w1, h1); b1.filter = 'none';
       b2.filter = q >= 2 ? 'blur(2.2px)' : 'blur(1.2px)'; b2.globalCompositeOperation = 'copy';
       b2.drawImage(B1, 0, 0); b2.filter = 'none';
@@ -86,7 +86,7 @@ export function createBloom(opts) {
       // No ctx.filter (Safari iOS): pseudo-threshold by squaring with 'multiply', then box-ish blur via down/up scaling.
       b1.imageSmoothingEnabled = true; b1.imageSmoothingQuality = 'high';
       b1.globalCompositeOperation = 'copy'; b1.drawImage(canvas, 0, 0, w1, h1);
-      b1.globalCompositeOperation = 'multiply'; b1.drawImage(B1, 0, 0); b1.drawImage(B1, 0, 0);
+      b1.globalCompositeOperation = 'multiply'; b1.drawImage(B1, 0, 0); b1.drawImage(B1, 0, 0); b1.drawImage(B1, 0, 0);
       b1.globalCompositeOperation = 'source-over';
       const hw = Math.max(2, w1 >> 1), hh = Math.max(2, h1 >> 1);
       b3.imageSmoothingEnabled = true;

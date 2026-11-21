@@ -424,3 +424,69 @@ export function drawBackdrop(ctx, view, t) {
   ctx.globalCompositeOperation = 'source-over';
   ctx.drawImage(vignette(), 0, 0, W, H);
 }
+
+/* ---------- overgrowth (abandoned factory reclaimed by nature) ---------- */
+// drawOvergrowth(ctx, sx, sy, kind, seed[, t, H]) kinds: 'moss'|'weeds'|'puddle'|'debris'|'vines_n'|'vines_w'|'tree'|'shaft'
+const MOSS = ['#3d4a2a', '#4a5a30', '#56663a', '#2f3a22', '#6b7448'];
+function blob(g, R, cx, cy, rx, ry, cols, n) {
+  for (let i = 0; i < n; i++) { const a = R() * TAU, d = Math.sqrt(R()); g.globalAlpha = .25 + R() * .45; g.fillStyle = cols[(R() * cols.length) | 0];
+    g.beginPath(); g.ellipse(cx + Math.cos(a) * rx * d, cy + Math.sin(a) * ry * d, 2 + R() * 6, 1 + R() * 3, 0, 0, TAU); g.fill(); }
+  g.globalAlpha = 1;
+}
+function leaf(g, x, y, a, s, col) { g.save(); g.translate(x, y); g.rotate(a); g.fillStyle = col; g.beginPath(); g.ellipse(s, 0, s, s * .45, 0, 0, TAU); g.fill(); g.restore(); }
+function vine(g, R, x0, y0, len, dx) {
+  g.strokeStyle = '#2b3320'; g.lineWidth = 1.3; g.beginPath(); g.moveTo(x0, y0);
+  let x = x0, y = y0; const pts = [];
+  for (let s = 0; s < len; s += 4) { x += (R() - .5) * 2 + dx; y += 4; g.lineTo(x, y); pts.push([x, y]); }
+  g.stroke();
+  for (const [px, py] of pts) if (R() < .7) leaf(g, px, py, (R() - .5) * 2.4 + (R() < .5 ? 0 : Math.PI), 2.2 + R() * 2, MOSS[(R() * MOSS.length) | 0]);
+}
+function buildOver(g, k, S, H) {
+  const R = rng(S * 977 + k.length * 31);
+  if (k === 'moss') { blob(g, R, 0, 16, 22, 10, MOSS, 46); g.fillStyle = 'rgba(20,30,10,.25)'; g.beginPath(); g.ellipse(0, 16, 20, 9, 0, 0, TAU); g.fill(); }
+  else if (k === 'weeds') {
+    blob(g, R, 0, 18, 10, 5, MOSS, 10);
+    for (let i = 0; i < 9; i++) { const x = (R() - .5) * 26, y = 12 + R() * 10, h = 6 + R() * 12; g.strokeStyle = MOSS[(R() * 5) | 0]; g.lineWidth = 1.2;
+      g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + (R() - .5) * 6, y - h * .6, x + (R() - .5) * 8, y - h); g.stroke(); if (R() < .4) leaf(g, x, y - h * .5, -1 - R(), 3, '#5c6a3a'); }
+    if (R() < .4) { g.fillStyle = '#b8a26a'; g.beginPath(); g.arc((R() - .5) * 14, 6, 1.6, 0, TAU); g.fill(); }
+  } else if (k === 'puddle') {
+    g.fillStyle = 'rgba(12,20,24,.75)'; g.beginPath(); g.ellipse(0, 16, 16 + R() * 6, 7 + R() * 2, 0, 0, TAU); g.fill();
+    g.strokeStyle = 'rgba(150,180,190,.22)'; g.lineWidth = 1; g.beginPath(); g.ellipse(-3, 14, 8, 3, 0, Math.PI * 1.1, Math.PI * 1.8); g.stroke();
+    blob(g, R, 14, 18, 6, 3, MOSS, 6);
+  } else if (k === 'debris') {
+    for (let i = 0; i < 7; i++) { const x = (R() - .5) * 30, y = 10 + R() * 12; g.fillStyle = ['#3a3530', '#4d443a', '#5a4a3a', '#2a2622', '#6a4a30'][(R() * 5) | 0];
+      poly(g, [x, y, x + 3 + R() * 5, y + R() * 2, x + 2 + R() * 3, y + 2 + R() * 3, x - 1, y + 2]); g.fill(); }
+    g.strokeStyle = '#4a3a28'; g.lineWidth = 2; g.beginPath(); g.moveTo(-12, 22); g.lineTo(6, 14); g.stroke();
+  } else if (k === 'vines_n' || k === 'vines_w') {
+    const sgn = k === 'vines_n' ? 1 : -1;
+    for (let i = 0; i < 4; i++) { const u = 3 + R() * 26; vine(g, R, u * sgn, u / 2 - H, 14 + R() * H * .7, 0); }
+    blob(g, R, 16 * sgn, 8 - H, 14, 5, MOSS, 22);
+    blob(g, R, 16 * sgn, 6, 14, 5, MOSS, 18); // moss at wall base
+  } else if (k === 'tree') {
+    // a gnarled tree growing up through the cracked floor and out the broken roof
+    g.fillStyle = 'rgba(0,0,0,.35)'; g.beginPath(); g.ellipse(0, 16, 30, 13, 0, 0, TAU); g.fill();
+    blob(g, R, 0, 16, 34, 14, MOSS, 60);
+    const bark = lg(g, -10, 0, 12, 0, [[0, '#2a2018'], [.5, '#4a3a28'], [1, '#221a12']]);
+    g.fillStyle = bark; g.beginPath(); g.moveTo(-14, 18); g.quadraticCurveTo(-6, -40, -9, -150); g.lineTo(5, -150); g.quadraticCurveTo(4, -40, 14, 18); g.closePath(); g.fill();
+    g.strokeStyle = '#2a2018'; g.lineCap = 'round';
+    const br = (x, y, a, l, w) => { if (w < 1) return; const ex = x + Math.cos(a) * l, ey = y + Math.sin(a) * l; g.lineWidth = w; g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo((x + ex) / 2 + (R() - .5) * 10, (y + ey) / 2, ex, ey); g.stroke();
+      if (w < 3) for (let i = 0; i < 4; i++) leaf(g, ex + (R() - .5) * 8, ey + (R() - .5) * 8, R() * TAU, 3 + R() * 2, MOSS[(R() * 5) | 0]);
+      br(ex, ey, a - .4 - R() * .3, l * .7, w * .62); br(ex, ey, a + .4 + R() * .3, l * .7, w * .62); };
+    br(-2, -60, -2.4, 34, 6); br(0, -95, -.7, 34, 6); br(-2, -140, -1.9, 30, 5); br(2, -140, -1.1, 30, 5);
+    for (let i = 0; i < 5; i++) { g.strokeStyle = '#2a2018'; g.lineWidth = 3; const a = R() * TAU; g.beginPath(); g.moveTo(0, 12); g.quadraticCurveTo(Math.cos(a) * 14, 14 + Math.sin(a) * 6, Math.cos(a) * 28, 16 + Math.sin(a) * 12); g.stroke(); }
+    blob(g, R, 0, -160, 46, 26, MOSS, 90);
+  }
+}
+export function drawOvergrowth(ctx, sx, sy, kind, seed, t = 0, H = 80) {
+  const S = sm(seed) % 6;
+  if (kind === 'shaft') { // dusty daylight through the broken roof (dynamic, additive)
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const a = .07 + .02 * Math.sin(t * .7);
+    ctx.fillStyle = lg(ctx, sx, sy - 260, sx, sy + 20, [[0, `rgba(255,236,190,${a * 1.6})`], [1, 'rgba(255,236,190,0)']]);
+    ctx.beginPath(); ctx.moveTo(sx - 30, sy - 260); ctx.lineTo(sx + 40, sy - 260); ctx.lineTo(sx + 70, sy + 24); ctx.lineTo(sx - 50, sy + 24); ctx.closePath(); ctx.fill();
+    for (let i = 0; i < 10; i++) { const R = rng(i * 131 + 7), y = ((R() * 280 + t * (6 + R() * 6)) % 280) - 250; glow(ctx, 'a', sx + (R() - .3) * 60 + y * -.1, sy + y, 1.6, .5); }
+    ctx.restore(); return;
+  }
+  const big = kind === 'tree', w = big ? 200 : 72, h = big ? 260 : (kind.startsWith('vines') ? H + 50 : 48);
+  put(ctx, sprite('O|' + kind + '|' + S + '|' + H, w, h, w / 2, big ? 215 : (kind.startsWith('vines') ? H + 12 : 12), g => buildOver(g, kind, S, H)), sx, sy);
+}

@@ -14,8 +14,8 @@ export function box(ctx, x, y, z, w, d, h, c = METAL) {
   poly(ctx, [P(x + w, y, z), P(x + w, y + d, z), P(x + w, y + d, z + h), P(x + w, y, z + h)], c.right, c.edge);
   poly(ctx, [P(x, y, z + h), P(x + w, y, z + h), P(x + w, y + d, z + h), P(x, y + d, z + h)], c.top, c.edge);
 }
-export const METAL = { top: '#3d4552', left: '#1d2129', right: '#2a303a', edge: 'rgba(0,0,0,0.55)' };
-export const DARK = { top: '#262a33', left: '#121419', right: '#1a1d24', edge: 'rgba(0,0,0,0.6)' };
+export const METAL = { top: '#55534a', left: '#26251f', right: '#37352e', edge: 'rgba(0,0,0,0.55)' };
+export const DARK = { top: '#2e2d29', left: '#151412', right: '#1e1d1a', edge: 'rgba(0,0,0,0.6)' };
 export const C = { cyan: '#4ff3ff', amber: '#ffb63b', magenta: '#ff3bd4', red: '#ff3b4f', green: '#5dff8a' };
 export function glow(ctx, x, y, z, r, color, blur = 3) {
   const [sx, sy] = P(x, y, z);

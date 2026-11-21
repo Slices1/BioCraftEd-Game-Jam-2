@@ -1,0 +1,61 @@
+{
+  "ids": {
+    "flap": [
+      "sfx/flap_1.mp3",
+      "sfx/flap_2.mp3"
+    ],
+    "caw": [
+      "sfx/caw_1.mp3",
+      "sfx/caw_2.mp3"
+    ],
+    "land": "sfx/land.mp3",
+    "step": [
+      "sfx/step_1.mp3",
+      "sfx/step_2.mp3"
+    ],
+    "jack_in": "sfx/jack_in.mp3",
+    "jack_out": "sfx/jack_out.mp3",
+    "press_slam": "sfx/press_slam.mp3",
+    "wall_break": "sfx/wall_break.mp3",
+    "crate_land": "sfx/crate_land.mp3",
+    "magnet_on": "sfx/magnet_on.mp3",
+    "magnet_drop": "sfx/magnet_drop.mp3",
+    "laser_hum": "sfx/laser_hum.mp3",
+    "zap_death": "sfx/zap_death.mp3",
+    "plate_on": "sfx/plate_on.mp3",
+    "door_open": "sfx/door_open.mp3",
+    "cog_jam": "sfx/cog_jam.mp3",
+    "stick_pick": "sfx/stick_pick.mp3",
+    "ui_click": [
+      "sfx/ui_click_1.mp3",
+      "sfx/ui_click_2.mp3"
+    ],
+    "ui_confirm": "sfx/ui_confirm.mp3",
+    "win": "sfx/win.mp3"
+  },
+  "base": "assets/",
+  "kinds": {
+    "sfx": [
+      "caw",
+      "cog_jam",
+      "crate_land",
+      "door_open",
+      "flap",
+      "jack_in",
+      "jack_out",
+      "land",
+      "laser_hum",
+      "magnet_drop",
+      "magnet_on",
+      "plate_on",
+      "press_slam",
+      "step",
+      "stick_pick",
+      "ui_click",
+      "ui_confirm",
+      "wall_break",
+      "win",
+      "zap_death"
+    ]
+  }
+}

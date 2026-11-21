@@ -4,7 +4,7 @@ import { Entity } from './base.js';
 import { P, box, glow, tileTop, C, METAL } from '../iso.js';
 import { sprites } from '../sprites.js';
 
-const HEAD = { top: '#5a606c', left: '#2a2e36', right: '#3a3f4a', edge: 'rgba(0,0,0,.6)' };
+const HEAD = { top: '#6a5a3a', left: '#3a2e1e', right: '#4a3a26', edge: 'rgba(0,0,0,.6)' };
 export class Press extends Entity {
   constructor(def) {
     super(def);
@@ -58,10 +58,14 @@ export class Press extends Entity {
       box(ctx, x1 - 0.1, y1 - 0.1, 0, 0.2, 0.2, 3.3, METAL);
       box(ctx, x0 - 0.1, y0 - 0.1, 3.1, x1 - x0 + 0.2, y1 - y0 + 0.2, 0.35, METAL);
       const hz = 0.05 + this.head * 2.2;
-      box(ctx, x0 + 0.5, y0 + 0.5, hz + 0.4, x1 - x0 - 1 + 0.01 || 0.2, y1 - y0 - 1 + 0.01 || 0.2, 3.1 - hz - 0.4, { top: '#666', left: '#333', right: '#444' });
+      box(ctx, x0 + 0.5, y0 + 0.5, hz + 0.4, x1 - x0 - 1 + 0.01 || 0.2, y1 - y0 - 1 + 0.01 || 0.2, 3.1 - hz - 0.4, { top: '#8a8778', left: '#4a4840', right: '#6a675c', edge: 'rgba(0,0,0,.5)' });
       box(ctx, x0 + 0.05, y0 + 0.05, hz, x1 - x0 - 0.1, y1 - y0 - 0.1, 0.4, HEAD);
-      ctx.save(); ctx.shadowColor = C.amber; ctx.shadowBlur = 10;
-      tileTop(ctx, x0 + 0.1, y0 + 0.1, hz - 0.001, null, 'rgba(255,182,59,0.7)', Math.min(x1 - x0, y1 - y0) - 0.2); ctx.restore();
+      // hazard stripes on the ram face + warning shadow on the floor while armed
+      const [hx, hy] = P(x0 + (x1 - x0) / 2, y1 - 0.05, hz + 0.2);
+      ctx.save(); ctx.beginPath(); ctx.rect(hx - 60, hy - 6, 120, 12); ctx.clip(); ctx.fillStyle = '#c49a30'; ctx.fillRect(hx - 60, hy - 6, 120, 12);
+      ctx.fillStyle = '#1a1510'; for (let i = -8; i < 8; i++) { ctx.beginPath(); ctx.moveTo(hx + i * 14, hy + 8); ctx.lineTo(hx + i * 14 + 7, hy + 8); ctx.lineTo(hx + i * 14 + 15, hy - 8); ctx.lineTo(hx + i * 14 + 8, hy - 8); ctx.fill(); } ctx.restore();
+      ctx.save(); ctx.globalAlpha = 0.25 + (1 - this.head) * 0.4; tileTop(ctx, x0 + 0.05, y0 + 0.05, 0.01, 'rgba(0,0,0,.6)', null, Math.min(x1 - x0, y1 - y0) - 0.1); ctx.restore();
+      if (live) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.3 + 0.2 * Math.sin(t * 8); tileTop(ctx, x0 + 0.1, y0 + 0.1, 0.02, null, C.amber, Math.min(x1 - x0, y1 - y0) - 0.2); ctx.restore(); }
     }
   }
 }
