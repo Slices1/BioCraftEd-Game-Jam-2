@@ -26,15 +26,15 @@ rm -f "$OUT"
 python3 -I - "$GAME_DIR" "$OUT" <<'PY'
 import os, sys, zipfile, fnmatch
 root, out = sys.argv[1], sys.argv[2]
-EXCL_DIRS = {"tools", ".git", "node_modules", "dist"}
-EXCL_FILES = {"serve.sh", "build.sh", ".gitignore", "package.json", ".DS_Store", "Thumbs.db"}
+EXCL_DIRS = {"tools", ".git", "node_modules", "dist", "raw"}
+EXCL_FILES = {"poc.html", "env-test.html", "serve.sh", "build.sh", ".gitignore", "package.json", ".DS_Store", "Thumbs.db"}
 EXCL_PATHS = {"assets/audio-manifest.json"}
 EXCL_GLOBS = ["*.md", "*.zip", ".env", "*.env", "*~", "*.swp"]
 n = 0
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
     for d, dirs, files in os.walk(root):
         rel_d = os.path.relpath(d, root)
-        dirs[:] = sorted(x for x in dirs if not (rel_d == "." and x in EXCL_DIRS) and not x.startswith("."))
+        dirs[:] = sorted(x for x in dirs if not ((rel_d == "." and x in EXCL_DIRS) or x == "raw") and not x.startswith("."))
         for f in sorted(files):
             rel = os.path.normpath(os.path.join(rel_d, f)).replace(os.sep, "/")
             if f in EXCL_FILES or rel in EXCL_PATHS or any(fnmatch.fnmatch(f, g) for g in EXCL_GLOBS):
