@@ -98,9 +98,17 @@ export function playScene(game) {
     decorCache.set(r.idx, d); return d;
   }
   // painterly colour grade: desaturate + warm/dark multiply + lamp pools
+  // perf watchdog: if fps stays < 45, drop bloom then the saturation pass
+  let lowT = 0, lowPerf = 0;
+  function perfWatch(dt) {
+    const fps = game.loop.fps || 60;
+    lowT = fps < 45 ? lowT + dt : Math.max(0, lowT - dt * 0.5);
+    if (lowT > 2 && lowPerf < 2) { lowPerf++; lowT = 0; if (bloom) bloom.enabled = false; }
+  }
   function grade(ctx) {
     ctx.save();
-    ctx.globalCompositeOperation = 'saturation'; ctx.fillStyle = 'rgba(128,128,128,0.42)'; ctx.fillRect(0, 0, view.w, view.h);
+    if (lowPerf < 2) ctx.globalCompositeOperation = 'saturation';
+    else ctx.globalCompositeOperation = 'source-over', ctx.globalAlpha = 0; ctx.fillStyle = 'rgba(128,128,128,0.42)'; ctx.fillRect(0, 0, view.w, view.h);
     ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = 'rgb(200,188,170)'; ctx.fillRect(0, 0, view.w, view.h);
     ctx.restore();
   }
@@ -221,7 +229,8 @@ export function playScene(game) {
     grade(ctx);
     if (bloomMod && bloomOk) {
       if (!bloom) bloomOk = safe(() => { bloom = bloomMod.createBloom({ strength: 0.45, quality: 1, targetMs: 21 }); });
-      if (bloom && bloom.quality > 0) bloomOk = safe(() => bloom.apply(ctx, game.canvas));
+      if (bloom && lowPerf > 0) bloom.enabled = false;
+      if (bloom && bloom.enabled && bloom.quality > 0) bloomOk = safe(() => bloom.apply(ctx, game.canvas));
     }
     cam.begin(ctx); drawPrompt(ctx); cam.end(ctx);
     hud(ctx, cur);
@@ -321,7 +330,7 @@ export function playScene(game) {
     },
     exit() { game.loop.timeScale = 1; if (hum) { hum.stop(0.2); hum = null; } },
     update(dt) {
-      t += dt; banner = Math.max(0, banner - dt); clearT = Math.max(0, clearT - dt);
+      t += dt; perfWatch(dt); banner = Math.max(0, banner - dt); clearT = Math.max(0, clearT - dt);
       if (slowmo > 0) { slowmo -= dt / Math.max(0.05, game.loop.timeScale); game.loop.timeScale = slowmo > 0 ? 0.35 : 1; }
       { const ac = actions(); input.setTouchButton('buttonA', { visible: !!ac.a, hint: ac.a }).setTouchButton('buttonB', { visible: !!ac.b, hint: ac.b }); }
       input.stick(stick);
