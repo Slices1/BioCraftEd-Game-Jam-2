@@ -1,5 +1,5 @@
 // CORVID title: a slumped mech in a lamp-lit corner (3D, slow orbit) under the logo text.
-// First visit -> 'intro' cutscene, afterwards straight to 'play'.
+// Start -> 'intro' cutscene (skippable) -> 'play'.
 import * as THREE from 'three';
 import { getModel, getClips } from '../render/assets.js';
 import { text } from '../engine/ui.js';
@@ -97,11 +97,9 @@ export function titleScene(game) {
     if (started) return;
     started = true;
     try { audio.play('ui_confirm'); } catch (e) { /* ignore */ }
-    let seen = false;
-    try { seen = !!storage.get('introSeen', false); } catch (e) { seen = false; }
-    try { storage.set('introSeen', true); } catch (e) { /* ignore */ }
+    // Always play the intro (it is skippable with a tap / any key).
     game.state.carry = null;
-    scenes.go(seen ? 'play' : 'intro', {}, { fade: 0.6 });
+    scenes.go('intro', {}, { fade: 0.6 });
   }
 
   return {

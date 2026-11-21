@@ -186,6 +186,7 @@ export function introScene(game) {
       stopKeys = onKeys(skip);
       world.dawn(0);
       setView('ext');
+      if (game.debug) window.__intro = { get t() { return t; }, set t(v) { t = v; tl.update && tl.update(v); } };
     },
     exit() {
       if (stopKeys) stopKeys(); stopKeys = null;
