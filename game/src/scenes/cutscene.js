@@ -349,9 +349,9 @@ export function buildTowerWorld(D, opts = {}) {
   function applyGold() {
     const k = goldK * (1 + 0.35 * pulseP);
     goldMat.color.setRGB(2.2 * k + 0.12, 1.6 * k + 0.1, 0.5 * k + 0.04);
-    goldLight.intensity = 25 * k * (1 + pulseP * 0.6);
-    goldGlow.material.opacity = Math.min(1, 0.85 * goldK + 0.15 * pulseP);
-    const gs = 9 * (0.6 + 0.4 * goldK) + 2.5 * pulseP;
+    goldLight.intensity = 25 * k * (1 + pulseP * 0.25);
+    goldGlow.material.opacity = Math.min(1, 0.85 * goldK * (1 - 0.35 * pulseP) + 0.1 * pulseP);
+    const gs = 9 * (0.6 + 0.4 * goldK) + 1.0 * pulseP;
     goldGlow.scale.set(gs, gs, 1);
   }
   applyGold();
@@ -365,7 +365,7 @@ export function buildTowerWorld(D, opts = {}) {
     },
     pulse(p) {
       pulseP = p;
-      winMat.color.setScalar(1 + 0.7 * p);
+      winMat.color.setScalar(1 + 0.4 * p);
       cityMat.color.setScalar((1 + 0.5 * p));
       hemi.intensity = lerp(0.8, 1.0, dawnK) + 0.15 * p;
       applyGold();

@@ -139,6 +139,8 @@ function render() {
   view.begin(ctx);
   ctx.save();
   game.scenes.render(ctx);
+  ctx.restore();
+  ctx.save(); // subtitles must not inherit a scene's leftover alpha / transform
   game.voice.drawSubtitles(ctx, view);
   ctx.restore();
   game.fx.drawScreen(ctx);

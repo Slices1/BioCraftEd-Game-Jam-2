@@ -109,6 +109,7 @@ export function endingScene(game) {
   return {
     pausable: false,
     enter() {
+      if (game.r3) { game.r3._exp = game.r3.renderer.toneMappingExposure; game.r3.renderer.toneMappingExposure = 0.7; }
       world = buildTowerWorld(D, { rain: false });
       cam = new THREE.PerspectiveCamera(52, 1.6, 0.1, 700);
       camTrack = track([
@@ -146,6 +147,7 @@ export function endingScene(game) {
       if (game.r3) game.r3.setView(world.scene, cam);
     },
     exit() {
+      if (game.r3 && game.r3._exp) game.r3.renderer.toneMappingExposure = game.r3._exp;
       if (stopKeys) stopKeys(); stopKeys = null;
       D.dispose();
       world = null;
